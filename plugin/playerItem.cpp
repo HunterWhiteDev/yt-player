@@ -34,7 +34,8 @@ std::string exec(const char *cmd) {
   return result;
 }
 
-PlayerItem::PlayerItem(QObject *parent) : QObject(parent), historyIdx(0) {
+PlayerItem::PlayerItem(QObject *parent)
+    : QObject(parent), historyIdx(-1), nowPlayingId(QStringLiteral("")) {
 
   // Create cache dir if it does not exist
   char *p_username = getlogin();
@@ -77,10 +78,6 @@ QVariantMap PlayerItem::getSongFromAPI(QString videoId) {
   QString stdOutQString = QString::fromUtf8(stdOut);
   QStringList outputString = stdOutQString.split(QStringLiteral("//"));
 
-  qDebug() << "ID: " << videoId;
-  qDebug() << "SO: " << stdOutQString;
-  qDebug() << "OS " << outputString;
-
   QString title = outputString[0];
   QString duration = outputString[1];
   QString type = outputString[2];
@@ -88,8 +85,6 @@ QVariantMap PlayerItem::getSongFromAPI(QString videoId) {
   QString id = outputString[3];
   QString url = outputString[4];
   QString channel = outputString[5];
-
-  qDebug() << "T: " << title << "ID: " << id << "CHANNEL: " << channel;
 
   map.insert(QStringLiteral("title"), title);
   map.insert(QStringLiteral("id"), id);
@@ -169,7 +164,9 @@ void PlayerItem::search(QString input) {
   Q_EMIT searchUpdate(searchResults);
 }
 
-void PlayerItem::loadVideo(QString id) {
+// If updateIndex is passed, we move the history index to the last  position.
+// Other wise we handle it in the next() or previous() functions
+void PlayerItem::loadVideo(QString id, bool updateIndex) {
 
   mpvProcess.close();
   mpvProcess.kill();
@@ -193,8 +190,13 @@ void PlayerItem::loadVideo(QString id) {
               .arg(videoData.value(QStringLiteral("id")).toString(),
                    videoData.value(QStringLiteral("title")).toString());
 
-  // history.push_back(videoData.value(QStringLiteral("id")).toString());
   // historyIdx = history.count() - 1;
+
+  if (updateIndex) {
+    historyIdx++;
+    history.push_back(videoData.value(QStringLiteral("id")).toString());
+    Q_EMIT historyUpdate(history.count(), historyIdx);
+  }
 
   Q_EMIT nowPlayingUpdate(videoData);
   Q_EMIT playingStateChange(true);
@@ -237,27 +239,20 @@ void PlayerItem::previous() {
   if (historyIdx == 0)
     return;
 
-  loadVideo(history.at(historyIdx - 1));
   historyIdx--;
+
+  Q_EMIT historyUpdate(history.count(), historyIdx);
+  loadVideo(history[historyIdx], false);
 }
 
-// This call was giving me a hard time with QProcess so I just went with a more
-// stand libary approach
-void PlayerItem::next(QString videoTitle) {
+void PlayerItem::next() {
+  if (historyIdx == history.length() - 1)
+    return;
 
-  std::string execString = "yt-dlp ytsearch1:'Videos related to ";
-  execString.append(videoTitle.toStdString());
-  execString.append("' --flat-playlist --print '%(id)s'");
+  historyIdx++;
 
-  std::string stdOut = exec(&execString[0]);
-  QString qStringStdOut = QString::fromStdString(stdOut);
-  QStringList qStringList = qStringStdOut.split(QChar::fromLatin1('\n'));
-  QString id = qStringList[0];
-
-  // TODO: Make this look for 5 or so and then choose the one that is not the
-  // currently playing song.
-
-  loadVideo(id);
+  Q_EMIT historyUpdate(history.count(), historyIdx);
+  loadVideo(history[historyIdx], false);
 }
 
 PlayerItem::~PlayerItem() = default;

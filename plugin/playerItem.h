@@ -29,12 +29,13 @@ public:
   qint16 historyIdx;
 
   QProcess mpvProcess;
+  QString nowPlayingId;
   QVariantMap searchRelated(QString videoTitle);
 
   Q_INVOKABLE
   void search(QString input);
   Q_INVOKABLE
-  void loadVideo(QString url);
+  void loadVideo(QString url, bool updateIndex);
   Q_INVOKABLE
   void play();
   Q_INVOKABLE
@@ -42,10 +43,11 @@ public:
   Q_INVOKABLE
   void previous();
   Q_INVOKABLE
-  void next(QString videoTitle);
+  void next();
 
 Q_SIGNALS:
   void searchUpdate(QVariantList searchResults);
   void nowPlayingUpdate(QVariantMap data);
   void playingStateChange(bool state);
+  void historyUpdate(int length, int idx);
 };

@@ -19,6 +19,8 @@ PlasmoidItem {
     property bool isPlaying
     property var searchResultModel: null
     property bool hideListView
+    property int historyIdx: -1
+    property int historyLength: -1
 
     onExpandedChanged: (state) => {
         if (state === false) {
@@ -35,7 +37,6 @@ PlasmoidItem {
             root.hideListView = false;
         }
         onNowPlayingUpdate: (data) => {
-            console.log(data);
             root.nowPlayingTitle = data.title;
             root.nowPlayingChannel = data.channel;
             root.nowPlayingThumbnail = "https://i.ytimg.com/vi/" + data.id + "/hqdefault.jpg";
@@ -43,10 +44,13 @@ PlasmoidItem {
         onPlayingStateChange: (state) => {
             root.isPlaying = state;
         }
+        onHistoryUpdate: (length, idx) => {
+            root.historyLength = length;
+            root.historyIdx = idx;
+        }
     }
 
     fullRepresentation: Item {
-        // Layout.minimumWidth:  Kirigami.Units.gridUnit * 15
         Layout.minimumHeight: columnLayout.height
         Layout.maximumHeight: columnLayout.height
         implicitHeight: columnLayout.implicitHeight
@@ -127,7 +131,7 @@ PlasmoidItem {
                         Layout.alignment: Qt.AlignRight
 
                         PlasmaComponents3.Button {
-                            onClicked: player.loadVideo(searchResultRow.id)
+                            onClicked: player.loadVideo(searchResultRow.id, true)
                             background.visible: false
                             onHoveredChanged: {
                                 background.visible = hovered;
@@ -169,7 +173,6 @@ PlasmoidItem {
                         visible: root.nowPlayingImage
                         anchors.verticalCenter: parent.verticalCenter
                         anchors.left: parent.left
-                        // anchors.horizontalCenter: parent.horizontalCenter
                         source: root.nowPlayingThumbnail
                         height: 25
                         width: 25
@@ -178,7 +181,6 @@ PlasmoidItem {
                     Text {
                         id: nowPlayingTitle
 
-                        // anchors.verticalCenter: parent.verticalCenter
                         anchors.top: nowPlayingImage.top
                         anchors.left: nowPlayingImage.right
                         anchors.leftMargin: 5
@@ -199,12 +201,11 @@ PlasmoidItem {
                     }
 
                 }
-                //I had no clue how to get this to work properly like I wanted, this seems to fix it I guess
 
                 PlasmaComponents3.Button {
+                    enabled: root.historyIdx > 0
                     Layout.alignment: Qt.AlignVCenter
                     background.visible: false
-                    enabled: root.searchResultModel.length > 0
                     onHoveredChanged: {
                         background.visible = hovered;
                     }
@@ -244,6 +245,7 @@ PlasmoidItem {
 
                 PlasmaComponents3.Button {
                     Layout.alignment: Qt.AlignVCenter
+                    enabled: root.historyLength - 1 > root.historyIdx
                     background.visible: false
                     onHoveredChanged: {
                         background.visible = hovered;
