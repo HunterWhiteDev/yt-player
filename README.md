@@ -5,8 +5,10 @@ An audio youtube player for the panel in KDE Plasma. Requires [yt-dlp](https://g
 Run these commands:
 
 ```sh
-cmake ../ -DCMAKE_INSTALL_PREFIX=/usr \
-make \
+mkdir build
+cd build
+cmake ../ -DCMAKE_INSTALL_PREFIX=/usr
+make
 sudo make install
 ```
 
