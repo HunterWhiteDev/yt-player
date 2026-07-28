@@ -1,0 +1,19 @@
+{
+  "KPlugin": {
+    "Id": "dev.hunterwhite.player",
+    "Name": "YT Player",
+    "Version": "1.0",
+    "Website": "https://hunterwhite.dev"
+  },
+  "ConfigModel": [
+    {
+      "name": "General",
+      "icon": "settings-configure",
+      "source": "configGeneral.qml"
+    }
+  ],
+  "X-Plasma-API-Minimum-Version": "6.0",
+  "X-Plasma-API": "declarativeappletscript",
+  "X-Plasma-MainScript": "ui/main.qml",
+  "KPackageStructure": "Plasma/Applet"
+}
