@@ -22,6 +22,7 @@
 #include <string.h>
 #include <strings.h>
 #include <unistd.h>
+#include <vector>
 
 std::string exec(const char *cmd) {
   char buffer[128];
@@ -45,6 +46,8 @@ PlayerItem::PlayerItem(QObject *parent)
   if (!dirExists) {
     QDir(filePath).mkdir(QStringLiteral("."));
   }
+
+  QVector<QString> history;
 }
 
 QVariantMap PlayerItem::getSongFromAPI(QString videoId) {
@@ -172,6 +175,7 @@ void PlayerItem::loadVideo(QString id, bool updateIndex) {
   mpvProcess.kill();
 
   QVariantMap videoData = getSongFromAPI(id);
+  qDebug() << "VID DATA: " << videoData;
 
   // Video is downloaded and stdout is piped to mpv in real time
   mpvProcess.setProcessChannelMode(QProcess::MergedChannels);
@@ -190,7 +194,7 @@ void PlayerItem::loadVideo(QString id, bool updateIndex) {
               .arg(videoData.value(QStringLiteral("id")).toString(),
                    videoData.value(QStringLiteral("title")).toString());
 
-  // historyIdx = history.count() - 1;
+  qDebug() << "args: " << args;
 
   if (updateIndex) {
     historyIdx++;
@@ -201,7 +205,9 @@ void PlayerItem::loadVideo(QString id, bool updateIndex) {
   Q_EMIT nowPlayingUpdate(videoData);
   Q_EMIT playingStateChange(true);
 
+  nowPlayingId = id;
   mpvProcess.start(QStringLiteral("bash"), args);
+  qDebug() << "Finished";
 }
 
 void PlayerItem::pause() {
@@ -245,9 +251,70 @@ void PlayerItem::previous() {
   loadVideo(history[historyIdx], false);
 }
 
-void PlayerItem::next() {
-  if (historyIdx == history.length() - 1)
+/// Get a random "recomended video";
+void PlayerItem::playNext() {
+
+  QVariantMap songMeta = getSongFromAPI(nowPlayingId);
+
+  int searchCount = history.count() * 2;
+  QStringList args;
+  args << QStringLiteral("ytsearch%1:%2")
+              .arg(searchCount)
+              .arg(songMeta.value(QStringLiteral("title")).toString())
+       << QStringLiteral("--flat-playlist") << QStringLiteral("--print")
+       << QStringLiteral("%(id)s");
+
+  qDebug() << "ARGS: " << args;
+
+  QProcess process;
+  process.startDetached(QStringLiteral("yt-dlp"), args);
+
+  // if (!process.waitForStarted()) {
+  //   qDebug() << "Failed to start! Error code: " << process.error();
+  //   return;
+  // }
+  //
+  // // wait for finish
+  // if (!process.waitForFinished()) {
+  //   qDebug() << "Failed to finish! Error code: " << process.error();
+  //   return;
+  // }
+
+  // Get related video from yt-dlp
+  QString cmdString =
+      QStringLiteral("yt-dlp ytsearch%1:'%2' --flat-playlist --print '%(id)s'")
+          .arg(searchCount)
+          .arg(songMeta.value(QStringLiteral("title")).toString());
+  std::string output = exec(&cmdString.toStdString()[0]);
+  QString outputQString = QString::fromStdString(output);
+
+  // Get the output, iterate over every id that the output has and the history.
+  // If any string in the history is equal to that output, just skip for the
+  // rests of each loop
+  QStringList stringList = outputQString.split(QChar::fromLatin1('\n'));
+  for (QString str : stringList) {
+    bool skip = false;
+    for (QString id : history) {
+      if (str.compare(id) == 0) {
+        skip = true;
+      }
+      if (skip)
+        continue;
+    }
+    if (skip)
+      continue;
+
+    qDebug() << "STRING ID: " << str;
+    loadVideo(str, true);
     return;
+  }
+}
+
+void PlayerItem::next() {
+  if (historyIdx == history.length() - 1) {
+    playNext();
+    return;
+  }
 
   historyIdx++;
 

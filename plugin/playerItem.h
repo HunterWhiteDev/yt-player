@@ -31,6 +31,7 @@ public:
   QProcess mpvProcess;
   QString nowPlayingId;
   QVariantMap searchRelated(QString videoTitle);
+  void playNext();
 
   Q_INVOKABLE
   void search(QString input);
