@@ -46,9 +46,15 @@ public:
   Q_INVOKABLE
   void next();
 
+  Q_SLOT
+  void loadingFinished(QVariantMap vidoeData, int updateIndex);
+
 Q_SIGNALS:
   void searchUpdate(QVariantList searchResults);
   void nowPlayingUpdate(QVariantMap data);
   void playingStateChange(bool state);
   void historyUpdate(int length, int idx);
 };
+
+void loadVideoWork(QVariantMap videoData, bool updateIndex,
+                   QProcess *mpvProcess);

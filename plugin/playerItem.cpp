@@ -5,6 +5,7 @@
 #include <QProcess>
 #include <QString>
 #include <QStringLiteral>
+#include <QThread>
 #include <cstring>
 #include <qcontainerfwd.h>
 #include <qdebug.h>
@@ -14,6 +15,7 @@
 #include <qmap.h>
 #include <qobject.h>
 #include <qprocess.h>
+#include <qthread.h>
 #include <qtmetamacros.h>
 #include <qtypes.h>
 #include <qurl.h>
@@ -21,8 +23,8 @@
 #include <stdlib.h>
 #include <string.h>
 #include <strings.h>
+#include <thread>
 #include <unistd.h>
-#include <vector>
 
 std::string exec(const char *cmd) {
   char buffer[128];
@@ -169,16 +171,18 @@ void PlayerItem::search(QString input) {
 
 // If updateIndex is passed, we move the history index to the last  position.
 // Other wise we handle it in the next() or previous() functions
-void PlayerItem::loadVideo(QString id, bool updateIndex) {
+void loadVideoWork(QVariantMap videoData, bool updateIndex,
+                   QProcess *mpvProcess) {
 
-  mpvProcess.close();
-  mpvProcess.kill();
+  mpvProcess->close();
+  mpvProcess->terminate();
+  mpvProcess->kill();
 
-  QVariantMap videoData = getSongFromAPI(id);
+  // QVariantMap videoData = getSongFromAPI(id);
   qDebug() << "VID DATA: " << videoData;
 
   // Video is downloaded and stdout is piped to mpv in real time
-  mpvProcess.setProcessChannelMode(QProcess::MergedChannels);
+  mpvProcess->setProcessChannelMode(QProcess::MergedChannels);
 
   // We want to run a command like this: yt-dlp https://youtu.be/zq_VYh1SvuMM
   // -o
@@ -196,6 +200,28 @@ void PlayerItem::loadVideo(QString id, bool updateIndex) {
 
   qDebug() << "args: " << args;
 
+  // nowPlayingId = id;
+  mpvProcess->start(QStringLiteral("bash"), args);
+  mpvProcess->waitForFinished();
+
+  // playNext();
+}
+
+void PlayerItem::loadVideo(QString url, bool updateIndex) {
+  qDebug() << "Load video called from qml";
+
+  QVariantMap videoData = getSongFromAPI(url);
+  QThread *thread =
+      QThread::create(loadVideoWork, videoData, updateIndex, &mpvProcess);
+
+  connect(thread, &QThread::finished, this, [this, videoData, updateIndex]() {
+    PlayerItem::loadingFinished(videoData, updateIndex);
+  });
+
+  thread->start();
+}
+
+void PlayerItem::loadingFinished(QVariantMap videoData, int updateIndex) {
   if (updateIndex) {
     historyIdx++;
     history.push_back(videoData.value(QStringLiteral("id")).toString());
@@ -205,9 +231,7 @@ void PlayerItem::loadVideo(QString id, bool updateIndex) {
   Q_EMIT nowPlayingUpdate(videoData);
   Q_EMIT playingStateChange(true);
 
-  nowPlayingId = id;
-  mpvProcess.start(QStringLiteral("bash"), args);
-  qDebug() << "Finished";
+  qDebug() << "Thread is Done";
 }
 
 void PlayerItem::pause() {
