@@ -31,9 +31,6 @@ PlasmoidItem {
     }
 
     Player {
-        // fullRepresentationItem.Layout.implicitWidth = searchView.width;
-        // fullRepresentationItem.Layout.implicitHeight = searchView.height;
-
         id: player
 
         onSearchUpdate: (searchResults) => {
@@ -116,7 +113,7 @@ PlasmoidItem {
                             Text {
                                 id: searchText
 
-                                text: "search"
+                                text: "Search"
                                 color: "white"
                             }
 
@@ -129,7 +126,6 @@ PlasmoidItem {
                 Item {
                     id: playerMetaInfo
 
-                    height: playerActions.bottom + playerControls.top
                     anchors.top: playerActions.bottom
                     anchors.bottom: playerControls.top
                     width: parent.width
@@ -137,8 +133,9 @@ PlasmoidItem {
                     Item {
                         id: nowPlayingImageContainer
 
-                        anchors.right: nowPlayingTitle.left
-                        anchors.top: nowPlayingTitle.top
+                        anchors.verticalCenter: parent.verticalCenter
+                        anchors.horizontalCenter: parent.horizontalCenter
+                        anchors.horizontalCenterOffset: -50
                         implicitWidth: 50
                         implicitHeight: 50
                         anchors.rightMargin: 10
@@ -172,8 +169,10 @@ PlasmoidItem {
                         //Cut it off of the title is too long
                         text: root.nowPlayingTitle ? root.nowPlayingTitle.slice(0, 20) : "No Audio"
                         color: "white"
-                        anchors.topMargin: -10
-                        anchors.centerIn: parent
+                        anchors.top: nowPlayingImageContainer.top
+                        anchors.left: nowPlayingImageContainer.right
+                        anchors.topMargin: 7.5
+                        anchors.leftMargin: 10
                     }
 
                     Text {

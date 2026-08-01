@@ -203,14 +203,22 @@ void loadVideoWork(QVariantMap videoData, bool updateIndex,
   // nowPlayingId = id;
   mpvProcess->start(QStringLiteral("bash"), args);
   mpvProcess->waitForFinished();
-
-  // playNext();
 }
 
-void PlayerItem::loadVideo(QString url, bool updateIndex) {
-  qDebug() << "Load video called from qml";
+void PlayerItem::loadVideo(QString id, bool updateIndex) {
 
-  QVariantMap videoData = getSongFromAPI(url);
+  qDebug() << "Load Video Called";
+  QVariantMap videoData = getSongFromAPI(id);
+  if (updateIndex) {
+    historyIdx++;
+    history.push_back(videoData.value(QStringLiteral("id")).toString());
+    Q_EMIT historyUpdate(history.count(), historyIdx);
+  }
+
+  nowPlayingId = videoData.value(QStringLiteral("id")).toString();
+  Q_EMIT nowPlayingUpdate(videoData);
+  Q_EMIT playingStateChange(true);
+
   QThread *thread =
       QThread::create(loadVideoWork, videoData, updateIndex, &mpvProcess);
 
@@ -222,16 +230,8 @@ void PlayerItem::loadVideo(QString url, bool updateIndex) {
 }
 
 void PlayerItem::loadingFinished(QVariantMap videoData, int updateIndex) {
-  if (updateIndex) {
-    historyIdx++;
-    history.push_back(videoData.value(QStringLiteral("id")).toString());
-    Q_EMIT historyUpdate(history.count(), historyIdx);
-  }
 
-  Q_EMIT nowPlayingUpdate(videoData);
-  Q_EMIT playingStateChange(true);
-
-  qDebug() << "Thread is Done";
+  playNext();
 }
 
 void PlayerItem::pause() {
@@ -277,6 +277,10 @@ void PlayerItem::previous() {
 
 /// Get a random "recomended video";
 void PlayerItem::playNext() {
+  if (nowPlayingId.length() == 0) {
+    qDebug() << "No id for now playing";
+    return;
+  }
 
   QVariantMap songMeta = getSongFromAPI(nowPlayingId);
 
@@ -287,8 +291,6 @@ void PlayerItem::playNext() {
               .arg(songMeta.value(QStringLiteral("title")).toString())
        << QStringLiteral("--flat-playlist") << QStringLiteral("--print")
        << QStringLiteral("%(id)s");
-
-  qDebug() << "ARGS: " << args;
 
   QProcess process;
   process.startDetached(QStringLiteral("yt-dlp"), args);
@@ -311,6 +313,7 @@ void PlayerItem::playNext() {
           .arg(songMeta.value(QStringLiteral("title")).toString());
   std::string output = exec(&cmdString.toStdString()[0]);
   QString outputQString = QString::fromStdString(output);
+  qDebug() << outputQString;
 
   // Get the output, iterate over every id that the output has and the history.
   // If any string in the history is equal to that output, just skip for the
