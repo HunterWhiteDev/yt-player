@@ -58,3 +58,5 @@ Q_SIGNALS:
 
 void loadVideoWork(QVariantMap videoData, bool updateIndex,
                    QProcess *mpvProcess);
+
+void waitForFinish(QProcess *mpvProcess);

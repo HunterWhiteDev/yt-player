@@ -179,7 +179,6 @@ void loadVideoWork(QVariantMap videoData, bool updateIndex,
   mpvProcess->kill();
 
   // QVariantMap videoData = getSongFromAPI(id);
-  qDebug() << "VID DATA: " << videoData;
 
   // Video is downloaded and stdout is piped to mpv in real time
   mpvProcess->setProcessChannelMode(QProcess::MergedChannels);
@@ -198,11 +197,17 @@ void loadVideoWork(QVariantMap videoData, bool updateIndex,
               .arg(videoData.value(QStringLiteral("id")).toString(),
                    videoData.value(QStringLiteral("title")).toString());
 
-  qDebug() << "args: " << args;
-
   // nowPlayingId = id;
   mpvProcess->start(QStringLiteral("bash"), args);
   mpvProcess->waitForFinished();
+  qDebug() << "Finished";
+}
+
+void waitForFinish(QProcess *mpvProcess) {
+  while (mpvProcess->state() == mpvProcess->Running ||
+         mpvProcess->state() == mpvProcess->Starting) {
+    QString output = QString::fromUtf8(mpvProcess->readAllStandardOutput());
+  }
 }
 
 void PlayerItem::loadVideo(QString id, bool updateIndex) {
@@ -219,6 +224,7 @@ void PlayerItem::loadVideo(QString id, bool updateIndex) {
   Q_EMIT nowPlayingUpdate(videoData);
   Q_EMIT playingStateChange(true);
 
+  // Run mpv on this thread
   QThread *thread =
       QThread::create(loadVideoWork, videoData, updateIndex, &mpvProcess);
 
@@ -227,11 +233,17 @@ void PlayerItem::loadVideo(QString id, bool updateIndex) {
   });
 
   thread->start();
+
+  qDebug() << "Code running after initial  thread call";
+  // Watch the stdOut to see when above thread
+  QThread *finishThread = QThread::create(waitForFinish, &mpvProcess);
+  finishThread->start();
 }
 
 void PlayerItem::loadingFinished(QVariantMap videoData, int updateIndex) {
+  qDebug() << "Loading finished called";
 
-  playNext();
+  // playNext();
 }
 
 void PlayerItem::pause() {

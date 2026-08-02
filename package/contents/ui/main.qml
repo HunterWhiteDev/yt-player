@@ -13,7 +13,7 @@ PlasmoidItem {
     id: root
 
     property string nowPlayingId
-    property string nowPlayingTitle
+    property string nowPlayingTitle: "This is a very very very long title"
     property string nowPlayingChannel
     property string nowPlayingThumbnail: ""
     property bool isPlaying
@@ -163,23 +163,53 @@ PlasmoidItem {
 
                     }
 
-                    Text {
-                        id: nowPlayingTitle
+                    Flickable {
+                        id: flickableTitle
 
-                        //Cut it off of the title is too long
-                        text: root.nowPlayingTitle ? root.nowPlayingTitle.slice(0, 20) : "No Audio"
-                        color: "white"
                         anchors.top: nowPlayingImageContainer.top
                         anchors.left: nowPlayingImageContainer.right
-                        anchors.topMargin: 7.5
                         anchors.leftMargin: 10
+                        anchors.topMargin: 7.5
+                        width: 150
+                        height: nowPlayingTitle.height
+                        contentWidth: nowPlayingTitle.width
+                        clip: true
+                        Component.onCompleted: {
+                            animation.start();
+                        }
+
+                        Text {
+                            id: nowPlayingTitle
+
+                            //Cut it off of the title is too long
+                            text: root.nowPlayingTitle ? root.nowPlayingTitle : "No Audio"
+                            color: "white"
+                            anchors.centerIn: parent
+                        }
+
+                        SequentialAnimation on contentX {
+                            id: animation
+
+                            onFinished: {
+                                flickableTitle.contentX = 0;
+                                restart();
+                            }
+
+                            PropertyAnimation {
+                                from: flickableTitle.originX
+                                to: 150
+                                duration: 5000
+                            }
+
+                        }
+
                     }
 
                     Text {
                         id: nowPlayingChannel
 
-                        anchors.top: nowPlayingTitle.bottom
-                        anchors.left: nowPlayingTitle.left
+                        anchors.top: flickableTitle.bottom
+                        anchors.left: flickableTitle.left
                         text: root.nowPlayingChannel ? root.nowPlayingChannel : "Select a track"
                         color: "#a8a1b0"
                     }
@@ -439,11 +469,6 @@ PlasmoidItem {
         Layout.minimumWidth: compactPlayButton.implicitWidth + compactTextLabel.implicitWidth + 10
         Layout.alignment: Qt.AlignCenter
 
-        MouseArea {
-            anchors.fill: parent
-            onClicked: root.expanded = !root.expanded
-        }
-
         PlasmaComponents3.Button {
             id: compactPlayButton
 
@@ -466,13 +491,46 @@ PlasmoidItem {
 
         }
 
-        Label {
-            id: compactTextLabel
+        Flickable {
+            id: compactFlickable
 
             anchors.verticalCenter: parent.verticalCenter
+            contentWidth: 150
+            clip: true
+            implicitWidth: 150
+            implicitHeight: parent.height
             Layout.alignment: Qt.AlignCenter
-            Layout.fillWidth: true
-            text: root.nowPlayingTitle ? root.nowPlayingTitle.length > 20 ? root.nowPlayingTitle.slice(0, 20) + "..." : root.nowPlayingTitle : "No Audio"
+            Layout.fillHeight: true
+
+            MouseArea {
+                anchors.fill: parent
+                onClicked: root.expanded = !root.expanded
+            }
+
+            Label {
+                id: compactTextLabel
+
+                anchors.verticalCenter: parent.verticalCenter
+                Layout.fillWidth: true
+                text: root.nowPlayingTitle ? root.nowPlayingTitle : "No Audio"
+            }
+
+            SequentialAnimation on contentX {
+                id: compactAnimation
+
+                onFinished: {
+                    compactFlickable.contentX = 0;
+                    restart();
+                }
+
+                PropertyAnimation {
+                    from: compactFlickable.originX
+                    to: 150
+                    duration: 5000
+                }
+
+            }
+
         }
 
     }
