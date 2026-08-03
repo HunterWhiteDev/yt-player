@@ -13,7 +13,7 @@ PlasmoidItem {
     id: root
 
     property string nowPlayingId
-    property string nowPlayingTitle: "This is a very very very long title"
+    property string nowPlayingTitle: ""
     property string nowPlayingChannel
     property string nowPlayingThumbnail: ""
     property bool isPlaying
@@ -25,7 +25,7 @@ PlasmoidItem {
 
     onExpandedChanged: (state) => {
         if (state === false) {
-            searchResultModel = null;
+            searchResultModel = [];
             hideListView = true;
         }
     }
@@ -41,6 +41,7 @@ PlasmoidItem {
             root.nowPlayingTitle = data.title;
             root.nowPlayingChannel = data.channel;
             root.nowPlayingThumbnail = "https://i.ytimg.com/vi/" + data.id + "/hqdefault.jpg";
+            root.searchResultModel = [];
         }
         onPlayingStateChange: (state) => {
             root.isPlaying = state;
@@ -197,7 +198,8 @@ PlasmoidItem {
 
                             PropertyAnimation {
                                 from: flickableTitle.originX
-                                to: 150
+                                //Only animate when the text will overflow
+                                to: nowPlayingTitle.width > flickableTitle.width ? nowPlayingTitle.width - flickableTitle.width + 2 : 0
                                 duration: 5000
                             }
 
@@ -243,7 +245,7 @@ PlasmoidItem {
                     PlasmaComponents3.Button {
                         Layout.alignment: Qt.AlignVCenter
                         background.visible: false
-                        enabled: root.searchResultModel.length > 0
+                        enabled: root.nowPlayingTitle
                         onHoveredChanged: {
                             background.visible = hovered;
                         }
@@ -375,7 +377,7 @@ PlasmoidItem {
                     id: searchResultList
 
                     model: root.searchResultModel
-                    visible: model !== null
+                    visible: model.length > 0
                     implicitHeight: hideListView ? 0 : contentHeight
                     implicitWidth: 300
                     Layout.maximumWidth: 300
@@ -428,7 +430,13 @@ PlasmoidItem {
                             Layout.alignment: Qt.AlignRight
 
                             PlasmaComponents3.Button {
-                                onClicked: player.loadVideo(searchResultRow.id, true)
+                                onClicked: player.loadVideo({
+                                    "id": id,
+                                    "title": title,
+                                    "channel": channel,
+                                    "duration": duration,
+                                    "url": url
+                                }, true)
                                 background.visible: false
                                 onHoveredChanged: {
                                     background.visible = hovered;
@@ -525,7 +533,7 @@ PlasmoidItem {
 
                 PropertyAnimation {
                     from: compactFlickable.originX
-                    to: 150
+                    to: compactTextLabel.width > compactFlickable.width ? compactTextLabel.width - compactFlickable.width + 2 : 0
                     duration: 5000
                 }
 

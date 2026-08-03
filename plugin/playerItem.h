@@ -1,6 +1,7 @@
 #pragma once
 
 #include <QObject>
+#include <QVariant>
 #include <qcontainerfwd.h>
 #include <qlist.h>
 #include <qobject.h>
@@ -12,42 +13,36 @@ using namespace std;
 class PlayerItem : public QObject {
   Q_OBJECT
 
-  typedef struct {
-    QString id;
-    QString title;
-    QString url;
-    QString duration;
-  } SearchResult;
-
 public:
   explicit PlayerItem(QObject *parent = nullptr);
   ~PlayerItem() override;
 
+  QVariantMap nowPlaying;
+
   QVariantList lastSearchResults;
   QVariantMap getSongFromAPI(QString id);
-  QVector<QString> history;
+  QVector<QVariantMap> history;
   qint16 historyIdx;
 
-  QProcess mpvProcess;
-  QString nowPlayingId;
+  QProcess *mpvProcess;
+  QThread *nowPlayingThread;
+  QThread *waitForFinishThread;
+
   QVariantMap searchRelated(QString videoTitle);
   void playNext();
 
   Q_INVOKABLE
   void search(QString input);
   Q_INVOKABLE
-  void loadVideo(QString url, bool updateIndex);
+  void loadVideo(QVariantMap videoData, bool updateIndex);
   Q_INVOKABLE
   void play();
   Q_INVOKABLE
   void pause();
-  Q_INVOKABLE
-  void previous();
-  Q_INVOKABLE
-  void next();
-
-  Q_SLOT
-  void loadingFinished(QVariantMap vidoeData, int updateIndex);
+  // Q_INVOKABLE
+  // void previous();
+  // Q_INVOKABLE
+  // void next();
 
 Q_SIGNALS:
   void searchUpdate(QVariantList searchResults);
@@ -56,7 +51,6 @@ Q_SIGNALS:
   void historyUpdate(int length, int idx);
 };
 
-void loadVideoWork(QVariantMap videoData, bool updateIndex,
-                   QProcess *mpvProcess);
+void loadVideoWork(QVariantMap videoData, QProcess *mpvProcess);
 
-void waitForFinish(QProcess *mpvProcess);
+void waitForFinish();

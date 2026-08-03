@@ -10,6 +10,9 @@
 #include <qcontainerfwd.h>
 #include <qdebug.h>
 #include <qdir.h>
+#include <qjsondocument.h>
+#include <qjsonobject.h>
+#include <qjsonvalue.h>
 #include <qlist.h>
 #include <qlogging.h>
 #include <qmap.h>
@@ -37,12 +40,17 @@ std::string exec(const char *cmd) {
   return result;
 }
 
-PlayerItem::PlayerItem(QObject *parent)
-    : QObject(parent), historyIdx(-1), nowPlayingId(QStringLiteral("")) {
+PlayerItem::PlayerItem(QObject *parent) : QObject(parent), historyIdx(-1) {
 
   // Create cache dir if it does not exist
   char *p_username = getlogin();
   QString filePath = QStringLiteral("/home/%1/.cache/ytplayer").arg(p_username);
+
+  QProcess *mpvProcess = new QProcess;
+
+  QVariantMap nowPlaying;
+  // nowPlayingThread = new QThread();
+  // waitForFinishThread = new QThread();
 
   bool dirExists = QDir(filePath).exists();
   if (!dirExists) {
@@ -50,55 +58,6 @@ PlayerItem::PlayerItem(QObject *parent)
   }
 
   QVector<QString> history;
-}
-
-QVariantMap PlayerItem::getSongFromAPI(QString videoId) {
-
-  QVariantMap map;
-  QStringList args;
-  // Im using a double slash here so its unlikely the title will id will have it
-  // when I call .split();
-  args << QStringLiteral("%1").arg(videoId) << QStringLiteral("--print")
-       << QStringLiteral("%(title)s//%(duration)s//%(ie_key)s//%(id)s//%(url)s/"
-                         "/%(channel)s");
-
-  QProcess fetchProcess;
-
-  fetchProcess.setProcessChannelMode(QProcess::MergedChannels);
-  fetchProcess.start(QStringLiteral("yt-dlp"), args);
-
-  if (!fetchProcess.waitForStarted()) {
-    qDebug() << "Failed to start! Error code: " << fetchProcess.error();
-    return map;
-  }
-
-  // wait for finish
-  if (!fetchProcess.waitForFinished()) {
-    qDebug() << "Failed to finish! Error code: " << fetchProcess.error();
-    return map;
-  }
-
-  QByteArray stdOut = fetchProcess.readAllStandardOutput();
-
-  QString stdOutQString = QString::fromUtf8(stdOut);
-  QStringList outputString = stdOutQString.split(QStringLiteral("//"));
-
-  QString title = outputString[0];
-  QString duration = outputString[1];
-  QString type = outputString[2];
-
-  QString id = outputString[3];
-  QString url = outputString[4];
-  QString channel = outputString[5];
-
-  map.insert(QStringLiteral("title"), title);
-  map.insert(QStringLiteral("id"), id);
-  map.insert(QStringLiteral("duration"), duration);
-  map.insert(QStringLiteral("type"), type);
-  map.insert(QStringLiteral("url"), url);
-  map.insert(QStringLiteral("channel"), channel);
-
-  return map;
 }
 
 void PlayerItem::search(QString input) {
@@ -171,12 +130,9 @@ void PlayerItem::search(QString input) {
 
 // If updateIndex is passed, we move the history index to the last  position.
 // Other wise we handle it in the next() or previous() functions
-void loadVideoWork(QVariantMap videoData, bool updateIndex,
-                   QProcess *mpvProcess) {
+void loadVideoWork(QVariantMap videoData, QProcess *mpvProcess) {
 
-  mpvProcess->close();
-  mpvProcess->terminate();
-  mpvProcess->kill();
+  mpvProcess = new QProcess();
 
   // QVariantMap videoData = getSongFromAPI(id);
 
@@ -200,50 +156,57 @@ void loadVideoWork(QVariantMap videoData, bool updateIndex,
   // nowPlayingId = id;
   mpvProcess->start(QStringLiteral("bash"), args);
   mpvProcess->waitForFinished();
-  qDebug() << "Finished";
 }
 
-void waitForFinish(QProcess *mpvProcess) {
-  while (mpvProcess->state() == mpvProcess->Running ||
-         mpvProcess->state() == mpvProcess->Starting) {
-    QString output = QString::fromUtf8(mpvProcess->readAllStandardOutput());
+void waitForFinish() {
+
+  while (true) {
+
+    std::this_thread::sleep_for(1s);
+    std::string outputString = exec(
+        "echo '{ \"command\": [\"get_property\", \"time-pos\"] }' | socat - "
+        "/tmp/mpvsocket");
+    QString outputQString = QString::fromStdString(outputString);
+
+    qDebug() << outputQString;
+
+    if (outputQString.contains(QStringLiteral("Connection refused"))) {
+      // No connection so socket must have ended, end this loop so the thread
+      // can finish and we can play a new song
+      return;
+    }
   }
 }
 
-void PlayerItem::loadVideo(QString id, bool updateIndex) {
+void PlayerItem::loadVideo(QVariantMap videoData, bool updateIndex) {
 
-  qDebug() << "Load Video Called";
-  QVariantMap videoData = getSongFromAPI(id);
+  qDebug() << "PROCESS STATE -> " << mpvProcess->state();
+
   if (updateIndex) {
     historyIdx++;
-    history.push_back(videoData.value(QStringLiteral("id")).toString());
+    history.push_back(videoData);
     Q_EMIT historyUpdate(history.count(), historyIdx);
   }
 
-  nowPlayingId = videoData.value(QStringLiteral("id")).toString();
+  nowPlaying = videoData;
   Q_EMIT nowPlayingUpdate(videoData);
+
   Q_EMIT playingStateChange(true);
 
   // Run mpv on this thread
-  QThread *thread =
-      QThread::create(loadVideoWork, videoData, updateIndex, &mpvProcess);
+  nowPlayingThread = QThread::create(loadVideoWork, videoData, &mpvProcess);
+  nowPlayingThread->start();
 
-  connect(thread, &QThread::finished, this, [this, videoData, updateIndex]() {
-    PlayerItem::loadingFinished(videoData, updateIndex);
-  });
-
-  thread->start();
-
-  qDebug() << "Code running after initial  thread call";
   // Watch the stdOut to see when above thread
-  QThread *finishThread = QThread::create(waitForFinish, &mpvProcess);
-  finishThread->start();
-}
+  waitForFinishThread = QThread::create(waitForFinish);
+  waitForFinishThread->start();
 
-void PlayerItem::loadingFinished(QVariantMap videoData, int updateIndex) {
-  qDebug() << "Loading finished called";
-
-  // playNext();
+  // connect(waitForFinishThread, &QThread::finished, this, [this]() {
+  //   waitForFinishThread->quit();
+  //   nowPlayingThread->quit();
+  //   nowPlayingThread->deleteLater();
+  //   waitForFinishThread->deleteLater();
+  // });
 }
 
 void PlayerItem::pause() {
@@ -277,52 +240,42 @@ void PlayerItem::play() {
   Q_EMIT playingStateChange(true);
 }
 
-void PlayerItem::previous() {
-  if (historyIdx == 0)
-    return;
-
-  historyIdx--;
-
-  Q_EMIT historyUpdate(history.count(), historyIdx);
-  loadVideo(history[historyIdx], false);
-}
+// void PlayerItem::previous() {
+//   if (historyIdx == 0)
+//     return;
+//
+//   historyIdx--;
+//
+//   Q_EMIT historyUpdate(history.count(), historyIdx);
+//   loadVideo(history[historyIdx], false);
+// }
 
 /// Get a random "recomended video";
 void PlayerItem::playNext() {
-  if (nowPlayingId.length() == 0) {
-    qDebug() << "No id for now playing";
-    return;
-  }
+  // if (nowPlayingId.length() == 0) {
+  //   qDebug() << "No id for now playing";
+  //   return;
+  // }
 
-  QVariantMap songMeta = getSongFromAPI(nowPlayingId);
+  // QVariantMap songMeta = getSongFromAPI(nowPlayingId);
 
   int searchCount = history.count() * 2;
   QStringList args;
   args << QStringLiteral("ytsearch%1:%2")
               .arg(searchCount)
-              .arg(songMeta.value(QStringLiteral("title")).toString())
+              .arg(nowPlaying.value(QStringLiteral("title")).toString())
        << QStringLiteral("--flat-playlist") << QStringLiteral("--print")
        << QStringLiteral("%(id)s");
 
   QProcess process;
   process.startDetached(QStringLiteral("yt-dlp"), args);
 
-  // if (!process.waitForStarted()) {
-  //   qDebug() << "Failed to start! Error code: " << process.error();
-  //   return;
-  // }
-  //
-  // // wait for finish
-  // if (!process.waitForFinished()) {
-  //   qDebug() << "Failed to finish! Error code: " << process.error();
-  //   return;
-  // }
-
-  // Get related video from yt-dlp
   QString cmdString =
-      QStringLiteral("yt-dlp ytsearch%1:'%2' --flat-playlist --print '%(id)s'")
+      QStringLiteral(
+          "yt-dlp ytsearch%1:'%2' --flat-playlist --print "
+          "'%(title)s_%(duration)s_%(ie_key)s_%(id)s_%(url)s_%(channel)s'")
           .arg(searchCount)
-          .arg(songMeta.value(QStringLiteral("title")).toString());
+          .arg(nowPlaying.value(QStringLiteral("title")).toString());
   std::string output = exec(&cmdString.toStdString()[0]);
   QString outputQString = QString::fromStdString(output);
   qDebug() << outputQString;
@@ -331,10 +284,28 @@ void PlayerItem::playNext() {
   // If any string in the history is equal to that output, just skip for the
   // rests of each loop
   QStringList stringList = outputQString.split(QChar::fromLatin1('\n'));
-  for (QString str : stringList) {
+  for (QString lineStringList : stringList) {
+
+    QString title = lineStringList[0];
+    QString duration = lineStringList[1];
+    QString type = lineStringList[2];
+    QString id = lineStringList[3];
+    QString url = lineStringList[4];
+    QString channel = lineStringList[5];
+
+    QVariantMap map;
+    map.insert(QStringLiteral("title"), title);
+    map.insert(QStringLiteral("id"), id);
+    map.insert(QStringLiteral("duration"), duration);
+    map.insert(QStringLiteral("type"), type);
+    map.insert(QStringLiteral("url"), url);
+    map.insert(QStringLiteral("channel"), channel);
+
     bool skip = false;
-    for (QString id : history) {
-      if (str.compare(id) == 0) {
+    for (QVariantMap video : history) {
+
+      QString historyId = video.value(QStringLiteral("id")).toString();
+      if (id.compare(historyId) == 0) {
         skip = true;
       }
       if (skip)
@@ -343,22 +314,21 @@ void PlayerItem::playNext() {
     if (skip)
       continue;
 
-    qDebug() << "STRING ID: " << str;
-    loadVideo(str, true);
+    loadVideo(map, true);
     return;
   }
 }
 
-void PlayerItem::next() {
-  if (historyIdx == history.length() - 1) {
-    playNext();
-    return;
-  }
-
-  historyIdx++;
-
-  Q_EMIT historyUpdate(history.count(), historyIdx);
-  loadVideo(history[historyIdx], false);
-}
+// void PlayerItem::next() {
+//   if (historyIdx == history.length() - 1) {
+//     playNext();
+//     return;
+//   }
+//
+//   historyIdx++;
+//
+//   Q_EMIT historyUpdate(history.count(), historyIdx);
+//   loadVideo(history[historyIdx], false);
+// }
 
 PlayerItem::~PlayerItem() = default;
