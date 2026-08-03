@@ -46,8 +46,6 @@ PlayerItem::PlayerItem(QObject *parent) : QObject(parent), historyIdx(-1) {
   char *p_username = getlogin();
   QString filePath = QStringLiteral("/home/%1/.cache/ytplayer").arg(p_username);
 
-  QProcess *mpvProcess = new QProcess;
-
   QVariantMap nowPlaying;
   // nowPlayingThread = new QThread();
   // waitForFinishThread = new QThread();
@@ -180,7 +178,12 @@ void waitForFinish() {
 
 void PlayerItem::loadVideo(QVariantMap videoData, bool updateIndex) {
 
-  qDebug() << "PROCESS STATE -> " << mpvProcess->state();
+  while (mpvProcess->state() == mpvProcess->Running) {
+    qDebug() << "MPV Process is running trying to stop now";
+    mpvProcess->close();
+    mpvProcess->terminate();
+    mpvProcess->kill();
+  }
 
   if (updateIndex) {
     historyIdx++;
