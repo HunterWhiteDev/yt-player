@@ -1,3 +1,4 @@
+pragma ComponentBehavior: Bound
 import QtQml
 import QtQuick
 import QtQuick.Controls
@@ -16,11 +17,14 @@ PlasmoidItem {
     property string nowPlayingTitle: ""
     property string nowPlayingChannel
     property string nowPlayingThumbnail: ""
+    property int nowPlayingPos: 0
+    property int nowPlayingDuration: 0
     property bool isPlaying
     property var searchResultModel: []
     property bool hideListView
     property int historyIdx: -1
     property int historyLength: -1
+    property bool mpvStarted: false
     property PlasmaComponents3.SwipeView swipeView
 
     onExpandedChanged: (state) => {
@@ -42,6 +46,7 @@ PlasmoidItem {
             root.nowPlayingChannel = data.channel;
             root.nowPlayingThumbnail = "https://i.ytimg.com/vi/" + data.id + "/hqdefault.jpg";
             root.searchResultModel = [];
+            root.nowPlayingDuration = parseInt(data.duration);
         }
         onPlayingStateChange: (state) => {
             root.isPlaying = state;
@@ -50,13 +55,19 @@ PlasmoidItem {
             root.historyLength = length;
             root.historyIdx = idx;
         }
+        onMpvStarted: (state) => {
+            root.mpvStarted = state;
+        }
+        onTimeUpdate: (data) => {
+            root.nowPlayingPos = Math.floor(parseInt(data));
+        }
     }
 
     fullRepresentation: Item {
         id: fullRepresentationItem
 
-        Layout.minimumHeight: 150
-        Layout.maximumHeight: 150
+        Layout.minimumHeight: 200
+        Layout.maximumHeight: 200
         Layout.maximumWidth: 325
         Layout.minimumWidth: 325
 
@@ -66,8 +77,8 @@ PlasmoidItem {
             Layout.fillWidth: true
             onCurrentIndexChanged: {
                 if (swipeView.currentIndex === 0) {
-                    fullRepresentationItem.Layout.minimumHeight = 150;
-                    fullRepresentationItem.Layout.maximumHeight = 150;
+                    fullRepresentationItem.Layout.minimumHeight = 200;
+                    fullRepresentationItem.Layout.maximumHeight = 200;
                 } else if (swipeView.currentIndex === 1) {
                     fullRepresentationItem.Layout.minimumHeight = 650;
                     fullRepresentationItem.Layout.maximumHeight = 650;
@@ -87,13 +98,15 @@ PlasmoidItem {
             }
 
             //Playing View
-            Column {
+            ColumnLayout {
                 id: playerView
+                spacing: 5
 
                 RowLayout {
                     id: playerActions
 
-                    width: parent.width
+                    // width: parent.width
+                    Layout.alignment: Qt.AlignTop | Qt.AlignRight
 
                     PlasmaComponents3.Button {
                         Layout.alignment: Qt.AlignRight
@@ -126,9 +139,10 @@ PlasmoidItem {
 
                 Item {
                     id: playerMetaInfo
+                    Layout.alignment: Qt.AlignVCenter | Qt.AlignHCenter
 
-                    anchors.top: playerActions.bottom
-                    anchors.bottom: playerControls.top
+                    // anchors.top: playerActions.bottom
+                    // anchors.bottom: playerControls.top
                     width: parent.width
 
                     Item {
@@ -183,7 +197,16 @@ PlasmoidItem {
                             id: nowPlayingTitle
 
                             //Cut it off of the title is too long
-                            text: root.nowPlayingTitle ? root.nowPlayingTitle : "No Audio"
+                            text: {
+                                if (root.nowPlayingTitle) {
+                                    if (root.mpvStarted)
+                                        return root.nowPlayingTitle;
+                                    else
+                                        return "Loading...";
+                                } else {
+                                    return "No Audio";
+                                }
+                            }
                             color: "white"
                             anchors.centerIn: parent
                         }
@@ -216,13 +239,54 @@ PlasmoidItem {
                         color: "#a8a1b0"
                     }
 
+                    
                 }
 
+                   Item {
+                        id: sliderControls
+
+
+                        // visible: root.mpvStarted
+                        Layout.fillWidth: true
+                        Layout.alignment: Qt.AlignBottom 
+                        implicitHeight: 20
+
+
+                        Slider {
+                            id: slider
+
+                            width: parent.width
+                            anchors.top: parent.bottom
+                            from: 0
+                            stepSize: 1
+                            to: root.nowPlayingDuration
+                            value: root.nowPlayingPos
+                        }
+
+                        Text {
+                            text: new Date(root.nowPlayingPos * 1000).toISOString().slice(11, 19)
+                            anchors.top: slider.bottom
+                            anchors.left: parent.left
+                            color: "white"
+                        }
+
+                        Text {
+                            text: new Date(root.nowPlayingDuration * 1000).toISOString().slice(11, 19)
+                            anchors.top: slider.bottom
+                            anchors.right: parent.right
+                            color: "white"
+                        }
+
+                    }
+
+
                 RowLayout {
+                    Layout.alignment: Qt.AlignBottom | Qt.AlignHCenter
                     id: playerControls
 
-                    anchors.bottom: parent.bottom
-                    anchors.horizontalCenter: parent.horizontalCenter
+                    // anchors.bottom: parent.bottom
+                    // anchors.horizontalCenter: parent.horizontalCenter
+                    // anchors.topMargin: 35
 
                     PlasmaComponents3.Button {
                         enabled: root.historyIdx > 0
@@ -378,7 +442,7 @@ PlasmoidItem {
 
                     model: root.searchResultModel
                     visible: model.length > 0
-                    implicitHeight: hideListView ? 0 : contentHeight
+                    implicitHeight: root.hideListView && 0
                     implicitWidth: 300
                     Layout.maximumWidth: 300
 
