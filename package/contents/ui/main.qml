@@ -1,4 +1,5 @@
 pragma ComponentBehavior: Bound
+import QtMultimedia
 import QtQml
 import QtQuick
 import QtQuick.Controls
@@ -24,8 +25,9 @@ PlasmoidItem {
     property bool hideListView
     property int historyIdx: -1
     property int historyLength: -1
-    property bool mpvStarted: false
+    property bool songLoaded: false
     property PlasmaComponents3.SwipeView swipeView
+    property bool searchLoading: false;
 
     onExpandedChanged: (state) => {
         if (state === false) {
@@ -40,6 +42,7 @@ PlasmoidItem {
         onSearchUpdate: (searchResults) => {
             root.searchResultModel = searchResults;
             root.hideListView = false;
+            root.searchLoading = false;
         }
         onNowPlayingUpdate: (data) => {
             root.nowPlayingTitle = data.title;
@@ -48,18 +51,27 @@ PlasmoidItem {
             root.searchResultModel = [];
             root.nowPlayingDuration = parseInt(data.duration);
         }
-        onPlayingStateChange: (state) => {
-            root.isPlaying = state;
-        }
         onHistoryUpdate: (length, idx) => {
-            root.historyLength = length;
+         root.historyLength = length;
             root.historyIdx = idx;
         }
-        onMpvStarted: (state) => {
-            root.mpvStarted = state;
+        onSongStarted: (state) => {
+            mediaPlayer.stop();
+            mediaPlayer.source = "";
+            mediaPlayer.source = "/tmp/video.mp3";
+            mediaPlayer.play();
+            root.songLoaded = true
         }
         onTimeUpdate: (data) => {
             root.nowPlayingPos = Math.floor(parseInt(data));
+        }
+    }
+
+    MediaPlayer {
+        id: mediaPlayer
+        audioOutput: AudioOutput {}
+        onPositionChanged: (time) => {
+            root.nowPlayingPos = time / 1000;
         }
     }
 
@@ -70,6 +82,7 @@ PlasmoidItem {
         Layout.maximumHeight: 200
         Layout.maximumWidth: 325
         Layout.minimumWidth: 325
+
 
         PlasmaComponents3.SwipeView {
             id: swipeView
@@ -199,7 +212,7 @@ PlasmoidItem {
                             //Cut it off of the title is too long
                             text: {
                                 if (root.nowPlayingTitle) {
-                                    if (root.mpvStarted)
+                                    if (root.songLoaded)
                                         return root.nowPlayingTitle;
                                     else
                                         return "Loading...";
@@ -246,7 +259,6 @@ PlasmoidItem {
                         id: sliderControls
 
 
-                        // visible: root.mpvStarted
                         Layout.fillWidth: true
                         Layout.alignment: Qt.AlignBottom 
                         implicitHeight: 20
@@ -261,6 +273,10 @@ PlasmoidItem {
                             stepSize: 1
                             to: root.nowPlayingDuration
                             value: root.nowPlayingPos
+                            onMoved: () => {
+                                //Media player accepts position in milliseconds
+                                mediaPlayer.setPosition(slider.value * 1000);
+                            }
                         }
 
                         Text {
@@ -314,15 +330,15 @@ PlasmoidItem {
                             background.visible = hovered;
                         }
                         onClicked: {
-                            if (isPlaying)
-                                player.pause();
+                            if (mediaPlayer.playing)
+                                mediaPlayer.pause();
                             else
-                                player.play();
+                                mediaPlayer.play();
                         }
 
                         Kirigami.Icon {
                             anchors.centerIn: parent
-                            source: root.isPlaying ? "media-playback-pause" : "media-playback-start"
+                            source: mediaPlayer.playing ? "media-playback-pause" : "media-playback-start"
                             width: 25
                             height: 25
                         }
@@ -405,6 +421,8 @@ PlasmoidItem {
                         focus: true
                         Keys.onReturnPressed: {
                             player.search(search.text);
+                            root.searchLoading = true;
+                            root.searchResultModel = [];
                         }
                     }
 
@@ -416,7 +434,8 @@ PlasmoidItem {
                     Layout.fillHeight: true
                     Layout.preferredWidth: parent.width
                     Layout.alignment: Qt.AlignVCenter
-                    visible: root.searchResultModel.length < 1
+                    visible: !root.searchLoading && root.searchResultModel.length < 1
+
 
                     Kirigami.Icon {
                         id: noResultsIcon
@@ -437,11 +456,29 @@ PlasmoidItem {
 
                 }
 
+
+                Item {
+                    id: searchMessageLoader
+
+                    Layout.fillHeight: true
+                    Layout.preferredWidth: parent.width
+                    Layout.alignment: Qt.AlignVCenter
+                    visible: root.searchLoading 
+
+                    BusyIndicator {
+                        running: root.searchLoading
+                        anchors.centerIn: parent
+                        width: 75
+                        height: 75
+                    }
+
+                }
+
                 Repeater {
                     id: searchResultList
 
                     model: root.searchResultModel
-                    visible: model.length > 0
+                    visible: !root.searchLoading && model.length > 0
                     implicitHeight: root.hideListView && 0
                     implicitWidth: 300
                     Layout.maximumWidth: 300
@@ -494,13 +531,16 @@ PlasmoidItem {
                             Layout.alignment: Qt.AlignRight
 
                             PlasmaComponents3.Button {
-                                onClicked: player.loadVideo({
+                                onClicked: () => {
+                                    root.songLoaded = false;
+                                    player.loadVideo({
                                     "id": id,
                                     "title": title,
                                     "channel": channel,
                                     "duration": duration,
                                     "url": url
-                                }, true)
+                                    }, true)
+                                }   
                                 background.visible: false
                                 onHoveredChanged: {
                                     background.visible = hovered;
@@ -509,7 +549,6 @@ PlasmoidItem {
 
                                 Kirigami.Icon {
                                     id: playButton
-
                                     source: "media-playback-start"
                                 }
 
@@ -548,15 +587,15 @@ PlasmoidItem {
             anchors.verticalCenter: parent.verticalCenter
             background.visible: false
             onClicked: {
-                if (root.isPlaying)
-                    player.pause();
+                if (mediaPlayer.playing)
+                    mediaPlayer.pause();
                 else
-                    player.play();
+                    mediaPlayer.play();
             }
 
             Kirigami.Icon {
                 anchors.verticalCenter: parent.verticalCenter
-                source: root.isPlaying ? "media-playback-pause" : "media-playback-start"
+                source: mediaPlayer.playing ? "media-playback-pause" : "media-playback-start"
                 width: 25
                 height: 25
             }
@@ -574,10 +613,6 @@ PlasmoidItem {
             Layout.alignment: Qt.AlignCenter
             Layout.fillHeight: true
 
-            MouseArea {
-                anchors.fill: parent
-                onClicked: root.expanded = !root.expanded
-            }
 
             Label {
                 id: compactTextLabel
@@ -585,6 +620,12 @@ PlasmoidItem {
                 anchors.verticalCenter: parent.verticalCenter
                 Layout.fillWidth: true
                 text: root.nowPlayingTitle ? root.nowPlayingTitle : "No Audio"
+
+                MouseArea {
+                anchors.fill: parent
+                onClicked: root.expanded = !root.expanded
+                }
+
             }
 
             SequentialAnimation on contentX {
