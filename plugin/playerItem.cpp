@@ -5,15 +5,22 @@
 #include <QProcess>
 #include <QString>
 #include <QStringLiteral>
+#include <QThread>
+#include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <qcontainerfwd.h>
 #include <qdebug.h>
 #include <qdir.h>
+#include <qjsondocument.h>
+#include <qjsonobject.h>
+#include <qjsonvalue.h>
 #include <qlist.h>
 #include <qlogging.h>
 #include <qmap.h>
 #include <qobject.h>
 #include <qprocess.h>
+#include <qthread.h>
 #include <qtmetamacros.h>
 #include <qtypes.h>
 #include <qurl.h>
@@ -23,236 +30,257 @@
 #include <strings.h>
 #include <unistd.h>
 
+namespace playerItem {
 std::string exec(const char *cmd) {
-  char buffer[128];
-  std::string result = "";
-  FILE *pipe = popen(cmd, "r");
-  while (fgets(buffer, sizeof buffer, pipe) != NULL) {
-    result += buffer;
-  }
-  pclose(pipe);
-  return result;
+    char buffer[128];
+    std::string result = "";
+    FILE *pipe = popen(cmd, "r");
+    while (fgets(buffer, sizeof buffer, pipe) != NULL) {
+        result += buffer;
+    }
+    pclose(pipe);
+    return result;
 }
 
-PlayerItem::PlayerItem(QObject *parent)
-    : QObject(parent), historyIdx(-1), nowPlayingId(QStringLiteral("")) {
+} // namespace playerItem
 
-  // Create cache dir if it does not exist
-  char *p_username = getlogin();
-  QString filePath = QStringLiteral("/home/%1/.cache/ytplayer").arg(p_username);
 
-  bool dirExists = QDir(filePath).exists();
-  if (!dirExists) {
-    QDir(filePath).mkdir(QStringLiteral("."));
-  }
+void LoadVideoThread::run() {
+
+    //Removes song if one already exists
+    remove("/tmp/video.mp3");
+
+    m_mpvProcess = new QProcess();
+    m_mpvProcess->setProcessChannelMode(QProcess::MergedChannels);
+
+
+    QStringList args;
+    args << QStringLiteral("-c") << QStringLiteral("yt-dlp -x %1 -t mp3 -o /tmp/video").arg(m_videoData.value(QStringLiteral("url")).toString());
+
+    m_mpvProcess->start(QStringLiteral("bash"), args);
+    m_mpvProcess->waitForFinished();
+    finished(true);
+    //Call something to finish
 }
 
-QVariantMap PlayerItem::getSongFromAPI(QString videoId) {
+void LoadVideoThread::quitProcess() {
+    m_mpvProcess->terminate();
+    m_mpvProcess->waitForFinished();
+}
 
-  QVariantMap map;
-  QStringList args;
-  // Im using a double slash here so its unlikely the title will id will have it
-  // when I call .split();
-  args << QStringLiteral("%1").arg(videoId) << QStringLiteral("--print")
-       << QStringLiteral("%(title)s//%(duration)s//%(ie_key)s//%(id)s//%(url)s/"
-                         "/%(channel)s");
 
-  QProcess fetchProcess;
+void SearchThread::run() {
+    QStringList args;
+    args << QStringLiteral("ytsearch7:%1").arg(input)
+         << QStringLiteral("--flat-playlist") << QStringLiteral("--print")
+         << QStringLiteral(
+             "%(title)s*%(duration)s*%(ie_key)s*%(id)s*%(url)s*%(channel)s");
+    QProcess *process = new QProcess();
+    process->setProcessChannelMode(QProcess::MergedChannels);
+    process->start(QStringLiteral("yt-dlp"), args);
 
-  fetchProcess.setProcessChannelMode(QProcess::MergedChannels);
-  fetchProcess.start(QStringLiteral("yt-dlp"), args);
+    // make sure it starts
+    if (!process->waitForStarted()) {
+        qDebug() << "Failed to start! Error code: " << process->error();
+        return;
+    }
 
-  if (!fetchProcess.waitForStarted()) {
-    qDebug() << "Failed to start! Error code: " << fetchProcess.error();
-    return map;
-  }
+    // wait for finish
+    if (!process->waitForFinished()) {
+        qDebug() << "Failed to finish! Error code: " << process->error();
+        return;
+    }
 
-  // wait for finish
-  if (!fetchProcess.waitForFinished()) {
-    qDebug() << "Failed to finish! Error code: " << fetchProcess.error();
-    return map;
-  }
+    // read back and return
+    QByteArray stdOut = process->readAllStandardOutput();
+    QString stdOutQString = QString::fromUtf8(stdOut);
+    qDebug() << process->readAllStandardError();
 
-  QByteArray stdOut = fetchProcess.readAllStandardOutput();
+    QStringList outputStringList = stdOutQString.split(QChar::fromLatin1('\n'));
 
-  QString stdOutQString = QString::fromUtf8(stdOut);
-  QStringList outputString = stdOutQString.split(QStringLiteral("//"));
+    QVariantList searchResults;
 
-  QString title = outputString[0];
-  QString duration = outputString[1];
-  QString type = outputString[2];
+    for (int i = 0; i < outputStringList.count(); i++) {
 
-  QString id = outputString[3];
-  QString url = outputString[4];
-  QString channel = outputString[5];
+        QStringList lineStringList = outputStringList[i].split(QStringLiteral("*"));
 
-  map.insert(QStringLiteral("title"), title);
-  map.insert(QStringLiteral("id"), id);
-  map.insert(QStringLiteral("duration"), duration);
-  map.insert(QStringLiteral("type"), type);
-  map.insert(QStringLiteral("url"), url);
-  map.insert(QStringLiteral("channel"), channel);
+        // If it's a malformed string just skip it
+        if (lineStringList.count() < 5)
+            continue;
 
-  return map;
+        QVariantMap map;
+
+        QString title = lineStringList[0];
+        QString duration = lineStringList[1];
+        QString type = lineStringList[2];
+        QString id = lineStringList[3];
+        QString url = lineStringList[4];
+        QString channel = lineStringList[5];
+
+        // //"YouTube" should be the correct type (ie key). Channels for example are
+        // "YouTubeTab"
+        if (type.compare(QStringLiteral("Youtube")) != 0)
+            continue;
+
+        map.insert(QStringLiteral("title"), title);
+        map.insert(QStringLiteral("id"), id);
+        map.insert(QStringLiteral("duration"), duration);
+        map.insert(QStringLiteral("type"), type);
+        map.insert(QStringLiteral("url"), url);
+        map.insert(QStringLiteral("channel"), channel);
+
+        searchResults.append(map);
+    }
+
+    // Save this so we can get meta from the last search when the user clicks play
+    // lastSearchResults = searchResults;
+    finished(searchResults);
+
+};
+
+
+PlayerItem::PlayerItem(QObject *parent) : QObject(parent), historyIdx(-1) {
+
+    // Create cache dir if it does not exist
+    char *p_username = getlogin();
+    QString filePath = QStringLiteral("/home/%1/.cache/ytplayer").arg(p_username);
+
+    QVariantMap nowPlaying;
+
+
+    bool dirExists = QDir(filePath).exists();
+    if (!dirExists) {
+        QDir(filePath).mkdir(QStringLiteral("."));
+    }
+
+    QVector<QString> history;
 }
 
 void PlayerItem::search(QString input) {
 
-  QStringList args;
-  args << QStringLiteral("ytsearch7:%1").arg(input)
-       << QStringLiteral("--flat-playlist") << QStringLiteral("--print")
-       << QStringLiteral(
-              "%(title)s_%(duration)s_%(ie_key)s_%(id)s_%(url)s_%(channel)s");
-  QProcess process;
-  process.setProcessChannelMode(QProcess::MergedChannels);
-  process.start(QStringLiteral("yt-dlp"), args);
+    SearchThread *searchThread = new SearchThread(input);
+    searchThread->start();
 
-  // make sure it starts
-  if (!process.waitForStarted()) {
-    qDebug() << "Failed to start! Error code: " << process.error();
-    return;
-  }
-
-  // wait for finish
-  if (!process.waitForFinished()) {
-    qDebug() << "Failed to finish! Error code: " << process.error();
-    return;
-  }
-
-  // read back and return
-  QByteArray stdOut = process.readAllStandardOutput();
-  QString stdOutQString = QString::fromUtf8(stdOut);
-
-  QStringList outputStringList = stdOutQString.split(QChar::fromLatin1('\n'));
-
-  QVariantList searchResults;
-
-  for (int i = 0; i < outputStringList.count(); i++) {
-
-    QStringList lineStringList = outputStringList[i].split(QStringLiteral("_"));
-
-    // If it's a malformed string just skip it
-    if (lineStringList.count() < 5)
-      continue;
-
-    QVariantMap map;
-
-    QString title = lineStringList[0];
-    QString duration = lineStringList[1];
-    QString type = lineStringList[2];
-    QString id = lineStringList[3];
-    QString url = lineStringList[4];
-    QString channel = lineStringList[5];
-
-    // //"YouTube" should be the correct type (ie key). Channels for example are
-    // "YouTubeTab"
-    if (type.compare(QStringLiteral("Youtube")) != 0)
-      continue;
-
-    map.insert(QStringLiteral("title"), title);
-    map.insert(QStringLiteral("id"), id);
-    map.insert(QStringLiteral("duration"), duration);
-    map.insert(QStringLiteral("type"), type);
-    map.insert(QStringLiteral("url"), url);
-    map.insert(QStringLiteral("channel"), channel);
-
-    searchResults.append(map);
-  }
-
-  // Save this so we can get meta from the last search when the user clicks play
-  lastSearchResults = searchResults;
-  Q_EMIT searchUpdate(searchResults);
+    connect(searchThread, &SearchThread::finished, this,
+            &PlayerItem::searchUpdate);
 }
+
 
 // If updateIndex is passed, we move the history index to the last  position.
 // Other wise we handle it in the next() or previous() functions
-void PlayerItem::loadVideo(QString id, bool updateIndex) {
 
-  mpvProcess.close();
-  mpvProcess.kill();
+void PlayerItem::loadVideo(QVariantMap videoData, bool updateIndex) {
 
-  QVariantMap videoData = getSongFromAPI(id);
+    qDebug() << "Load Video called";
+    qDebug() << videoData;
 
-  // Video is downloaded and stdout is piped to mpv in real time
-  mpvProcess.setProcessChannelMode(QProcess::MergedChannels);
+    LoadVideoThread *loadThread = new LoadVideoThread(videoData);
 
-  // We want to run a command like this: yt-dlp https://youtu.be/zq_VYh1SvuMM
-  // -o
-  // - | mpv --no-video -
-  // QProcess can not run command line commands. Only a
-  // single process. So we just load bash with the QProcess
-  QStringList args;
 
-  args << QStringLiteral("-c")
-       << QStringLiteral(
-              "yt-dlp %1 -o - | mpv  "
-              "--title='%2' --input-ipc-server=/tmp/mpvsocket --no-video -")
-              .arg(videoData.value(QStringLiteral("id")).toString(),
-                   videoData.value(QStringLiteral("title")).toString());
+    // if (updateIndex) {
+    //     historyIdx++;
+    //     history.push_back(videoData);
+    //     Q_EMIT historyUpdate(history.count(), historyIdx);
+    // }
 
-  // historyIdx = history.count() - 1;
+    Q_EMIT nowPlayingUpdate(videoData);
 
-  if (updateIndex) {
-    historyIdx++;
-    history.push_back(videoData.value(QStringLiteral("id")).toString());
-    Q_EMIT historyUpdate(history.count(), historyIdx);
-  }
 
-  Q_EMIT nowPlayingUpdate(videoData);
-  Q_EMIT playingStateChange(true);
+    connect(loadThread, &LoadVideoThread::finished, this,
+            &PlayerItem::songStarted);
 
-  mpvProcess.start(QStringLiteral("bash"), args);
+    loadThread->start();
 }
 
-void PlayerItem::pause() {
-  // MPV can be controlled via sockets to /tmp
-  // https://stackoverflow.com/questions/35013075/pause-programmatically-video-player-mpv
-
-  QStringList args;
-  args << QStringLiteral("-c")
-       << QStringLiteral("echo '{ \"command\": [\"set_property\", \"pause\", "
-                         "true] }' | socat - /tmp/mpvsocket");
-  QProcess process;
-
-  process.setProcessChannelMode(QProcess::MergedChannels);
-  process.startDetached(QStringLiteral("bash"), args);
-  Q_EMIT playingStateChange(false);
-}
-
-void PlayerItem::play() {
-  // MPV can be controlled via sockets to /tmp
-  // https://stackoverflow.com/questions/35013075/pause-programmatically-video-player-mpv
-
-  QStringList args;
-  args << QStringLiteral("-c")
-       << QStringLiteral("echo '{ \"command\": [\"set_property\", \"pause\", "
-                         "false] }' | socat - /tmp/mpvsocket");
-  QProcess process;
-
-  process.setProcessChannelMode(QProcess::MergedChannels);
-  process.startDetached(QStringLiteral("bash"), args);
-
-  Q_EMIT playingStateChange(true);
-}
 
 void PlayerItem::previous() {
-  if (historyIdx == 0)
-    return;
+    if (historyIdx == 0)
+        return;
 
-  historyIdx--;
+    historyIdx--;
 
-  Q_EMIT historyUpdate(history.count(), historyIdx);
-  loadVideo(history[historyIdx], false);
+    Q_EMIT historyUpdate(history.count(), historyIdx);
+    loadVideo(history[historyIdx], false);
+}
+
+/// Get a random "recomended video";
+void PlayerItem::playNext() {
+    // if (nowPlayingId.length() == 0) {
+    //   qDebug() << "No id for now playing";
+    //   return;
+    // }
+
+    int searchCount = history.count() * 2;
+    QStringList args;
+    args << QStringLiteral("ytsearch%1:%2")
+         .arg(searchCount)
+         .arg(nowPlaying.value(QStringLiteral("title")).toString())
+         << QStringLiteral("--flat-playlist") << QStringLiteral("--print")
+         << QStringLiteral("%(id)s");
+
+    QProcess process;
+    process.startDetached(QStringLiteral("yt-dlp"), args);
+
+    QString cmdString =
+        QStringLiteral(
+            "yt-dlp ytsearch%1:'%2' --flat-playlist --print "
+            "'%(title)s||%(duration)s||%(ie_key)s||%(id)s||%(url)s||%(channel)s'")
+        .arg(searchCount)
+        .arg(nowPlaying.value(QStringLiteral("title")).toString());
+    std::string output = playerItem::exec(&cmdString.toStdString()[0]);
+    QString outputQString = QString::fromStdString(output);
+
+    // Get the output, iterate over every id that the output has and the history.
+    // If any string in the history is equal to that output, just skip for the
+    // rests of each loop
+    QStringList stringList = outputQString.split(QChar::fromLatin1('\n'));
+    for (QString lineString : stringList) {
+
+        QStringList lineStringList = lineString.split(QStringLiteral("||"));
+
+        QString title = lineStringList[0];
+        QString duration = lineStringList[1];
+        QString type = lineStringList[2];
+        QString id = lineStringList[3];
+        QString url = lineStringList[4];
+        QString channel = lineStringList[5];
+
+        QVariantMap map;
+        map.insert(QStringLiteral("title"), title);
+        map.insert(QStringLiteral("id"), id);
+        map.insert(QStringLiteral("duration"), duration);
+        map.insert(QStringLiteral("type"), type);
+        map.insert(QStringLiteral("url"), url);
+        map.insert(QStringLiteral("channel"), channel);
+
+        bool skip = false;
+        for (QVariantMap video : history) {
+
+            QString historyId = video.value(QStringLiteral("id")).toString();
+            if (id.compare(historyId) == 0) {
+                skip = true;
+            }
+            if (skip)
+                continue;
+        }
+        if (skip)
+            continue;
+
+        loadVideo(map, true);
+        return;
+    }
 }
 
 void PlayerItem::next() {
-  if (historyIdx == history.length() - 1)
-    return;
+    if (historyIdx == history.length() - 1) {
+        playNext();
+        return;
+    }
 
-  historyIdx++;
+    historyIdx++;
 
-  Q_EMIT historyUpdate(history.count(), historyIdx);
-  loadVideo(history[historyIdx], false);
+    Q_EMIT historyUpdate(history.count(), historyIdx);
+    loadVideo(history[historyIdx], false);
 }
 
 PlayerItem::~PlayerItem() = default;

@@ -1,3 +1,5 @@
+pragma ComponentBehavior: Bound
+import QtMultimedia
 import QtQml
 import QtQuick
 import QtQuick.Controls
@@ -13,18 +15,23 @@ PlasmoidItem {
     id: root
 
     property string nowPlayingId
-    property string nowPlayingTitle
+    property string nowPlayingTitle: ""
     property string nowPlayingChannel
-    property string nowPlayingThumbnail
+    property string nowPlayingThumbnail: ""
+    property int nowPlayingPos: 0
+    property int nowPlayingDuration: 0
     property bool isPlaying
-    property var searchResultModel: null
+    property var searchResultModel: []
     property bool hideListView
     property int historyIdx: -1
     property int historyLength: -1
+    property bool songLoaded: false
+    property PlasmaComponents3.SwipeView swipeView
+    property bool searchLoading: false;
 
     onExpandedChanged: (state) => {
         if (state === false) {
-            searchResultModel = null;
+            searchResultModel = [];
             hideListView = true;
         }
     }
@@ -35,230 +42,527 @@ PlasmoidItem {
         onSearchUpdate: (searchResults) => {
             root.searchResultModel = searchResults;
             root.hideListView = false;
+            root.searchLoading = false;
         }
         onNowPlayingUpdate: (data) => {
             root.nowPlayingTitle = data.title;
             root.nowPlayingChannel = data.channel;
             root.nowPlayingThumbnail = "https://i.ytimg.com/vi/" + data.id + "/hqdefault.jpg";
-        }
-        onPlayingStateChange: (state) => {
-            root.isPlaying = state;
+            root.searchResultModel = [];
+            root.nowPlayingDuration = parseInt(data.duration);
         }
         onHistoryUpdate: (length, idx) => {
-            root.historyLength = length;
+         root.historyLength = length;
             root.historyIdx = idx;
+        }
+        onSongStarted: (state) => {
+            mediaPlayer.stop();
+            mediaPlayer.source = "";
+            mediaPlayer.source = "/tmp/video.mp3";
+            mediaPlayer.play();
+            root.songLoaded = true
+        }
+        onTimeUpdate: (data) => {
+            root.nowPlayingPos = Math.floor(parseInt(data));
+        }
+    }
+
+    MediaPlayer {
+        id: mediaPlayer
+        audioOutput: AudioOutput {}
+        onPositionChanged: (time) => {
+            root.nowPlayingPos = time / 1000;
         }
     }
 
     fullRepresentation: Item {
-        Layout.minimumHeight: columnLayout.height
-        Layout.maximumHeight: columnLayout.height
-        implicitHeight: columnLayout.implicitHeight
+        id: fullRepresentationItem
 
-        ColumnLayout {
-            id: columnLayout
+        Layout.minimumHeight: 200
+        Layout.maximumHeight: 200
+        Layout.maximumWidth: 325
+        Layout.minimumWidth: 325
 
-            width: parent.width
-            anchors.fill: undefined
 
-            TextField {
-                id: search
+        PlasmaComponents3.SwipeView {
+            id: swipeView
 
-                Layout.fillWidth: true
-                Layout.alignment: Qt.AlignTop
-                placeholderText: "Search..."
-                color: "white"
-                focus: true
-                Keys.onReturnPressed: {
-                    player.search(search.text);
+            Layout.fillWidth: true
+            onCurrentIndexChanged: {
+                if (swipeView.currentIndex === 0) {
+                    fullRepresentationItem.Layout.minimumHeight = 200;
+                    fullRepresentationItem.Layout.maximumHeight = 200;
+                } else if (swipeView.currentIndex === 1) {
+                    fullRepresentationItem.Layout.minimumHeight = 650;
+                    fullRepresentationItem.Layout.maximumHeight = 650;
                 }
             }
+            //A Queue view will have to be created here eventually
+            spacing: 1
+            currentIndex: 0
+            anchors.fill: parent
 
-            Repeater {
-                id: searchResultList
+            Connections {
+                function onNowPlayingUpdate() {
+                    swipeView.setCurrentIndex(0);
+                }
 
-                model: root.searchResultModel
-                visible: model !== null
-                implicitHeight: hideListView ? 0 : contentHeight
-                implicitWidth: 300
-                Layout.maximumWidth: 300
+                target: player
+            }
 
-                delegate: RowLayout {
-                    id: searchResultRow
+            //Playing View
+            ColumnLayout {
+                id: playerView
+                spacing: 5
 
-                    required property string id
-                    required property string title
-                    required property string channel
-                    required property string duration
-                    required property string url
+                RowLayout {
+                    id: playerActions
 
-                    Layout.alignment: Qt.AlignTop
+                    // width: parent.width
+                    Layout.alignment: Qt.AlignTop | Qt.AlignRight
 
-                    Image {
-                        id: searchRowImage
-
-                        source: "https://i.ytimg.com/vi/" + id + "/hqdefault.jpg"
-                        Layout.preferredWidth: 50
-                        Layout.preferredHeight: 50
-                    }
-
-                    ColumnLayout {
-                        id: leftCol
-
-                        Text {
-                            id: titleText
-
-                            Layout.preferredWidth: 200
-                            wrapMode: Text.WordWrap
-                            text: searchResultRow.title
-                            color: "white"
-                        }
-
-                        Text {
-                            id: channelText
-
-                            Layout.preferredWidth: 200
-                            wrapMode: Text.WordWrap
-                            text: searchResultRow.channel
-                            color: "white"
-                        }
-
-                    }
-
-                    ColumnLayout {
-                        id: rightCol
-
+                    PlasmaComponents3.Button {
                         Layout.alignment: Qt.AlignRight
-
-                        PlasmaComponents3.Button {
-                            onClicked: player.loadVideo(searchResultRow.id, true)
-                            background.visible: false
-                            onHoveredChanged: {
-                                background.visible = hovered;
-                            }
-                            Layout.alignment: Qt.AlignRight
-
-                            Kirigami.Icon {
-                                id: playButton
-
-                                source: "media-playback-start"
-                            }
-
+                        onClicked: {
+                            swipeView.setCurrentIndex(1);
                         }
 
-                        Text {
-                            id: durationText
+                        contentItem: RowLayout {
+                            Kirigami.Icon {
+                                id: searchIcon
 
-                            color: "white"
-                            text: new Date(searchResultRow.duration * 1000).toISOString().slice(11, 19)
+                                color: "white"
+                                source: "search"
+                                Layout.preferredWidth: 20
+                                Layout.preferredHeight: 20
+                            }
+
+                            Text {
+                                id: searchText
+
+                                text: "Search"
+                                color: "white"
+                            }
+
                         }
 
                     }
 
                 }
-
-            }
-
-            RowLayout {
-                Layout.topMargin: 10
-                Layout.fillWidth: true
 
                 Item {
-                    Layout.alignment: Qt.AlignLeft
-                    Layout.fillWidth: true
+                    id: playerMetaInfo
+                    Layout.alignment: Qt.AlignVCenter | Qt.AlignHCenter
 
-                    Image {
-                        id: nowPlayingImage
+                    // anchors.top: playerActions.bottom
+                    // anchors.bottom: playerControls.top
+                    width: parent.width
 
-                        visible: root.nowPlayingImage
+                    Item {
+                        id: nowPlayingImageContainer
+
                         anchors.verticalCenter: parent.verticalCenter
-                        anchors.left: parent.left
-                        source: root.nowPlayingThumbnail
-                        height: 25
-                        width: 25
+                        anchors.horizontalCenter: parent.horizontalCenter
+                        anchors.horizontalCenterOffset: -50
+                        implicitWidth: 50
+                        implicitHeight: 50
+                        anchors.rightMargin: 10
+                        anchors.topMargin: -10
+
+                        Image {
+                            id: nowPlayingImage
+
+                            anchors.centerIn: parent
+                            // Layout.alignment: Qt.AlignHCenter
+                            source: root.nowPlayingThumbnail
+                            visible: root.nowPlayingThumbnail.length > 0
+                            height: 50
+                            width: 50
+                        }
+
+                        Kirigami.Icon {
+                            anchors.centerIn: parent
+                            color: "white"
+                            source: "media-optical-album"
+                            visible: root.nowPlayingThumbnail.length < 1
+                            height: 50
+                            width: 50
+                        }
+
                     }
 
-                    Text {
-                        id: nowPlayingTitle
+                    Flickable {
+                        id: flickableTitle
 
-                        anchors.top: nowPlayingImage.top
-                        anchors.left: nowPlayingImage.right
-                        anchors.leftMargin: 5
-                        anchors.topMargin: -5
-                        //Cut it off of the title is too long
-                        text: root.nowPlayingTitle ? root.nowPlayingTitle.slice(0, 20) : "No Audio Playing"
-                        color: "white"
+                        anchors.top: nowPlayingImageContainer.top
+                        anchors.left: nowPlayingImageContainer.right
+                        anchors.leftMargin: 10
+                        anchors.topMargin: 7.5
+                        width: 150
+                        height: nowPlayingTitle.height
+                        contentWidth: nowPlayingTitle.width
+                        clip: true
+                        Component.onCompleted: {
+                            animation.start();
+                        }
+
+                        Text {
+                            id: nowPlayingTitle
+
+                            //Cut it off of the title is too long
+                            text: {
+                                if (root.nowPlayingTitle) {
+                                    if (root.songLoaded)
+                                        return root.nowPlayingTitle;
+                                    else
+                                        return "Loading...";
+                                } else {
+                                    return "No Audio";
+                                }
+                            }
+                            color: "white"
+                            anchors.centerIn: parent
+                        }
+
+                        SequentialAnimation on contentX {
+                            id: animation
+
+                            onFinished: {
+                                flickableTitle.contentX = 0;
+                                restart();
+                            }
+
+                            PropertyAnimation {
+                                from: flickableTitle.originX
+                                //Only animate when the text will overflow
+                                to: nowPlayingTitle.width > flickableTitle.width ? nowPlayingTitle.width - flickableTitle.width + 2 : 0
+                                duration: 5000
+                            }
+
+                        }
+
                     }
 
                     Text {
                         id: nowPlayingChannel
 
-                        anchors.top: nowPlayingTitle.bottom
-                        anchors.left: nowPlayingImage.right
-                        anchors.leftMargin: 5
+                        anchors.top: flickableTitle.bottom
+                        anchors.left: flickableTitle.left
                         text: root.nowPlayingChannel ? root.nowPlayingChannel : "Select a track"
-                        color: "#6e6973"
+                        color: "#a8a1b0"
+                    }
+
+                    
+                }
+
+                   Item {
+                        id: sliderControls
+
+
+                        Layout.fillWidth: true
+                        Layout.alignment: Qt.AlignBottom 
+                        implicitHeight: 20
+
+
+                        Slider {
+                            id: slider
+
+                            width: parent.width
+                            anchors.top: parent.bottom
+                            from: 0
+                            stepSize: 1
+                            to: root.nowPlayingDuration
+                            value: root.nowPlayingPos
+                            onMoved: () => {
+                                //Media player accepts position in milliseconds
+                                mediaPlayer.setPosition(slider.value * 1000);
+                            }
+                        }
+
+                        Text {
+                            text: new Date(root.nowPlayingPos * 1000).toISOString().slice(11, 19)
+                            anchors.top: slider.bottom
+                            anchors.left: parent.left
+                            color: "white"
+                        }
+
+                        Text {
+                            text: new Date(root.nowPlayingDuration * 1000).toISOString().slice(11, 19)
+                            anchors.top: slider.bottom
+                            anchors.right: parent.right
+                            color: "white"
+                        }
+
+                    }
+
+
+                RowLayout {
+                    Layout.alignment: Qt.AlignBottom | Qt.AlignHCenter
+                    id: playerControls
+
+                    // anchors.bottom: parent.bottom
+                    // anchors.horizontalCenter: parent.horizontalCenter
+                    // anchors.topMargin: 35
+
+                    PlasmaComponents3.Button {
+                        enabled: root.historyIdx > 0
+                        Layout.alignment: Qt.AlignVCenter
+                        background.visible: false
+                        onHoveredChanged: {
+                            background.visible = hovered;
+                        }
+                        onClicked: player.previous()
+
+                        Kirigami.Icon {
+                            source: "arrow-left-double"
+                            width: 25
+                            height: 25
+                            anchors.centerIn: parent
+                        }
+
+                    }
+
+                    PlasmaComponents3.Button {
+                        Layout.alignment: Qt.AlignVCenter
+                        background.visible: false
+                        enabled: root.nowPlayingTitle
+                        onHoveredChanged: {
+                            background.visible = hovered;
+                        }
+                        onClicked: {
+                            if (mediaPlayer.playing)
+                                mediaPlayer.pause();
+                            else
+                                mediaPlayer.play();
+                        }
+
+                        Kirigami.Icon {
+                            anchors.centerIn: parent
+                            source: mediaPlayer.playing ? "media-playback-pause" : "media-playback-start"
+                            width: 25
+                            height: 25
+                        }
+
+                    }
+
+                    PlasmaComponents3.Button {
+                        Layout.alignment: Qt.AlignVCenter
+                        enabled: root.nowPlayingTitle
+                        background.visible: false
+                        onHoveredChanged: {
+                            background.visible = hovered;
+                        }
+                        onClicked: {
+                            player.next();
+                        }
+
+                        Kirigami.Icon {
+                            source: "arrow-right-double"
+                            width: 25
+                            height: 25
+                            anchors.centerIn: parent
+                        }
+
                     }
 
                 }
 
-                PlasmaComponents3.Button {
-                    enabled: root.historyIdx > 0
-                    Layout.alignment: Qt.AlignVCenter
-                    background.visible: false
-                    onHoveredChanged: {
-                        background.visible = hovered;
-                    }
-                    onClicked: player.previous()
+            }
 
-                    Kirigami.Icon {
-                        source: "arrow-left-double"
-                        width: 25
-                        height: 25
-                        anchors.centerIn: parent
+            //Search View
+            ColumnLayout {
+                id: searchView
+
+                Layout.fillWidth: true
+
+                RowLayout {
+                    // Layout.alignment: Qt.AlignTop
+
+                    // Layout.preferredWidth: parent.width
+                    Layout.fillWidth: true
+                    spacing: 5
+
+                    PlasmaComponents3.Button {
+                        Layout.alignment: Qt.AlignLeft
+                        // implicitWidth: playerBackIcon.width + playerBackText.width
+                        onClicked: {
+                            swipeView.setCurrentIndex(0);
+                        }
+                        Layout.fillWidth: true
+
+                        contentItem: RowLayout {
+                            Kirigami.Icon {
+                                id: playerBackIcon
+
+                                Layout.alignment: Qt.AlignLeft
+                                source: "arrow-left"
+                                Layout.preferredWidth: 15
+                                Layout.preferredHeight: 15
+                            }
+
+                            Text {
+                                id: playerBackText
+
+                                Layout.alignment: Qt.AlignLeft
+                                text: "Player"
+                                color: "white"
+                            }
+
+                        }
+
+                    }
+
+                    TextField {
+                        id: search
+
+                        Layout.fillWidth: true
+                        placeholderText: "Search..."
+                        color: "white"
+                        focus: true
+                        Keys.onReturnPressed: {
+                            player.search(search.text);
+                            root.searchLoading = true;
+                            root.searchResultModel = [];
+                        }
                     }
 
                 }
 
-                PlasmaComponents3.Button {
+                Item {
+                    id: searchMessageContainer
+
+                    Layout.fillHeight: true
+                    Layout.preferredWidth: parent.width
                     Layout.alignment: Qt.AlignVCenter
-                    background.visible: false
-                    enabled: root.searchResultModel.length > 0
-                    onHoveredChanged: {
-                        background.visible = hovered;
-                    }
-                    onClicked: {
-                        if (isPlaying)
-                            player.pause();
-                        else
-                            player.play();
-                    }
+                    visible: !root.searchLoading && root.searchResultModel.length < 1
+
 
                     Kirigami.Icon {
+                        id: noResultsIcon
+
                         anchors.centerIn: parent
-                        source: root.isPlaying ? "media-playback-pause" : "media-playback-start"
-                        width: 25
-                        height: 25
+                        source: "search"
+                        width: 75
+                        height: 75
+                    }
+
+                    PlasmaComponents3.Label {
+                        text: "No Search Results Yet"
+                        anchors.top: noResultsIcon.bottom
+                        anchors.topMargin: 10
+                        anchors.horizontalCenter: noResultsIcon.horizontalCenter
+                        color: "lightgray"
                     }
 
                 }
 
-                PlasmaComponents3.Button {
+
+                Item {
+                    id: searchMessageLoader
+
+                    Layout.fillHeight: true
+                    Layout.preferredWidth: parent.width
                     Layout.alignment: Qt.AlignVCenter
-                    enabled: root.historyLength - 1 > root.historyIdx
-                    background.visible: false
-                    onHoveredChanged: {
-                        background.visible = hovered;
-                    }
-                    onClicked: {
-                        player.next(root.nowPlayingTitle);
+                    visible: root.searchLoading 
+
+                    BusyIndicator {
+                        running: root.searchLoading
+                        anchors.centerIn: parent
+                        width: 75
+                        height: 75
                     }
 
-                    Kirigami.Icon {
-                        source: "arrow-right-double"
-                        width: 25
-                        height: 25
-                        anchors.centerIn: parent
+                }
+
+                Repeater {
+                    id: searchResultList
+
+                    model: root.searchResultModel
+                    visible: !root.searchLoading && model.length > 0
+                    implicitHeight: root.hideListView && 0
+                    implicitWidth: 300
+                    Layout.maximumWidth: 300
+
+                    delegate: RowLayout {
+                        id: searchResultRow
+
+                        required property string id
+                        required property string title
+                        required property string channel
+                        required property string duration
+                        required property string url
+
+                        Layout.alignment: Qt.AlignTop
+
+                        Image {
+                            id: searchRowImage
+
+                            source: "https://i.ytimg.com/vi/" + id + "/hqdefault.jpg"
+                            Layout.preferredWidth: 50
+                            Layout.preferredHeight: 50
+                        }
+
+                        ColumnLayout {
+                            id: leftCol
+
+                            Text {
+                                id: titleText
+
+                                Layout.preferredWidth: 200
+                                wrapMode: Text.WordWrap
+                                text: searchResultRow.title
+                                color: "white"
+                            }
+
+                            Text {
+                                id: channelText
+
+                                Layout.preferredWidth: 200
+                                wrapMode: Text.WordWrap
+                                text: searchResultRow.channel
+                                color: "white"
+                            }
+
+                        }
+
+                        ColumnLayout {
+                            id: rightCol
+
+                            Layout.alignment: Qt.AlignRight
+
+                            PlasmaComponents3.Button {
+                                onClicked: () => {
+                                    root.songLoaded = false;
+                                    player.loadVideo({
+                                    "id": id,
+                                    "title": title,
+                                    "channel": channel,
+                                    "duration": duration,
+                                    "url": url
+                                    }, true)
+                                }   
+                                background.visible: false
+                                onHoveredChanged: {
+                                    background.visible = hovered;
+                                }
+                                Layout.alignment: Qt.AlignRight
+
+                                Kirigami.Icon {
+                                    id: playButton
+                                    source: "media-playback-start"
+                                }
+
+                            }
+
+                            Text {
+                                id: durationText
+
+                                color: "white"
+                                text: new Date(searchResultRow.duration * 1000).toISOString().slice(11, 19)
+                            }
+
+                        }
+
                     }
 
                 }
@@ -276,11 +580,6 @@ PlasmoidItem {
         Layout.minimumWidth: compactPlayButton.implicitWidth + compactTextLabel.implicitWidth + 10
         Layout.alignment: Qt.AlignCenter
 
-        MouseArea {
-            anchors.fill: parent
-            onClicked: root.expanded = !root.expanded
-        }
-
         PlasmaComponents3.Button {
             id: compactPlayButton
 
@@ -288,28 +587,63 @@ PlasmoidItem {
             anchors.verticalCenter: parent.verticalCenter
             background.visible: false
             onClicked: {
-                if (root.isPlaying)
-                    player.pause();
+                if (mediaPlayer.playing)
+                    mediaPlayer.pause();
                 else
-                    player.play();
+                    mediaPlayer.play();
             }
 
             Kirigami.Icon {
                 anchors.verticalCenter: parent.verticalCenter
-                source: root.isPlaying ? "media-playback-pause" : "media-playback-start"
+                source: mediaPlayer.playing ? "media-playback-pause" : "media-playback-start"
                 width: 25
                 height: 25
             }
 
         }
 
-        Label {
-            id: compactTextLabel
+        Flickable {
+            id: compactFlickable
 
             anchors.verticalCenter: parent.verticalCenter
+            contentWidth: 150
+            clip: true
+            implicitWidth: 150
+            implicitHeight: parent.height
             Layout.alignment: Qt.AlignCenter
-            Layout.fillWidth: true
-            text: root.nowPlayingTitle ? root.nowPlayingTitle.length > 20 ? root.nowPlayingTitle.slice(0, 20) + "..." : root.nowPlayingTitle : "No Audio Playing"
+            Layout.fillHeight: true
+
+
+            Label {
+                id: compactTextLabel
+
+                anchors.verticalCenter: parent.verticalCenter
+                Layout.fillWidth: true
+                text: root.nowPlayingTitle ? root.nowPlayingTitle : "No Audio"
+
+                MouseArea {
+                anchors.fill: parent
+                onClicked: root.expanded = !root.expanded
+                }
+
+            }
+
+            SequentialAnimation on contentX {
+                id: compactAnimation
+
+                onFinished: {
+                    compactFlickable.contentX = 0;
+                    restart();
+                }
+
+                PropertyAnimation {
+                    from: compactFlickable.originX
+                    to: compactTextLabel.width > compactFlickable.width ? compactTextLabel.width - compactFlickable.width + 2 : 0
+                    duration: 5000
+                }
+
+            }
+
         }
 
     }
