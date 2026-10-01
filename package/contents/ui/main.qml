@@ -171,8 +171,15 @@ PlasmoidItem {
                 MouseArea {
                 anchors.fill: parent
                 onClicked: root.expanded = !root.expanded
+                hoverEnabled: true
+                onEntered: {
+                 compactAnimation.start();
                 }
-
+                onExited: {
+                  compactAnimation.restart();
+                  compactAnimation.stop();
+                }
+              }
             }
 
             SequentialAnimation on contentX {
@@ -181,11 +188,12 @@ PlasmoidItem {
                 onFinished: {
                     compactFlickable.contentX = 0;
                     restart();
+                    compactAnimation.pause();
                 }
 
                 PropertyAnimation {
                     from: compactFlickable.originX
-                    to: compactTextLabel.width > compactFlickable.width ? compactTextLabel.width - compactFlickable.width + 2 : 0
+                    to: compactTextLabel.width > compactFlickable.width ? compactTextLabel.width - compactFlickable.width + 5 : 0
                     duration: 5000
                 }
 
