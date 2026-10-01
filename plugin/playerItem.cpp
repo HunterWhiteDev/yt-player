@@ -28,6 +28,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <strings.h>
+#include <thread>
 #include <unistd.h>
 
 namespace playerItem {
@@ -43,6 +44,37 @@ std::string exec(const char *cmd) {
 }
 
 } // namespace playerItem
+//
+//
+
+void MpvWatchThread::run() {
+    while(true) {
+        std::this_thread::sleep_for(1s);
+
+        QProcess* timeProcess = new QProcess();
+
+        timeProcess->setProcessChannelMode(QProcess::MergedChannels);
+
+        QStringList args;
+
+        args << QStringLiteral("-c")  << QStringLiteral("echo '{ \"command\": [\"get_property\", \"playback-time\"] }' | socat - /tmp/mpvsocket");
+
+        timeProcess->start(QStringLiteral("bash"), args);
+        timeProcess->waitForFinished();
+
+        QByteArray output = timeProcess->readAll();
+        QString outputString = QString::fromStdString(output.toStdString());
+
+        if(!outputString.contains(QStringLiteral("data"))) continue;
+
+        int idx = outputString.indexOf(QStringLiteral("."));
+        outputString.slice(8, idx - 8);
+
+        timeUpdate(outputString.toInt());
+    }
+
+}
+
 
 
 void LoadVideoThread::run() {
@@ -50,22 +82,36 @@ void LoadVideoThread::run() {
     //Removes song if one already exists
     remove("/tmp/video.mp3");
 
-    m_mpvProcess = new QProcess();
-    m_mpvProcess->setProcessChannelMode(QProcess::MergedChannels);
+    m_ytdlpProcess = new QProcess();
+    m_ytdlpProcess->setProcessChannelMode(QProcess::MergedChannels);
 
 
     QStringList args;
     args << QStringLiteral("-c") << QStringLiteral("yt-dlp -x %1 -t mp3 -o /tmp/video").arg(m_videoData.value(QStringLiteral("url")).toString());
 
-    m_mpvProcess->start(QStringLiteral("bash"), args);
-    m_mpvProcess->waitForFinished();
+    m_ytdlpProcess->start(QStringLiteral("bash"), args);
+    m_ytdlpProcess->waitForFinished();
+
+
+
+    m_mpvProcess = new QProcess();
+    QStringList mpvArgs;
+
+    mpvArgs << QStringLiteral("/tmp/video.mp3")
+            << QStringLiteral("--input-ipc-server=/tmp/mpvsocket")
+            << QStringLiteral("--title=%1").arg(m_videoData.value(QStringLiteral("title")).toString());
+
+    qDebug() << "Mpv Starting";
+
     finished(true);
-    //Call something to finish
+
+    m_mpvProcess->start(QStringLiteral("mpv"), mpvArgs);
+    m_mpvProcess->waitForFinished();
 }
 
 void LoadVideoThread::quitProcess() {
-    m_mpvProcess->terminate();
-    m_mpvProcess->waitForFinished();
+    m_ytdlpProcess->terminate();
+    m_ytdlpProcess->waitForFinished();
 }
 
 
@@ -190,7 +236,18 @@ void PlayerItem::loadVideo(QVariantMap videoData, bool updateIndex) {
             &PlayerItem::songStarted);
 
     loadThread->start();
+
+
+
+    MpvWatchThread *mpvWatchThread = new MpvWatchThread();
+    connect(mpvWatchThread, &MpvWatchThread::timeUpdate, this,
+            &PlayerItem::timeUpdate);
+
+    mpvWatchThread->start();
+
+
 }
+
 
 
 void PlayerItem::previous() {
@@ -271,6 +328,48 @@ void PlayerItem::playNext() {
     }
 }
 
+
+
+void PlayerItem::setTime(int time) {
+    QProcess* process = new QProcess();
+
+    process->setProcessChannelMode(QProcess::MergedChannels);
+
+    QStringList args;
+
+    args << QStringLiteral("-c")  << QStringLiteral("echo '{ \"command\": [\"set_property\", \"playback-time\", %1] }' | socat - /tmp/mpvsocket").arg(time);
+
+    process->start(QStringLiteral("bash"), args);
+
+}
+
+void PlayerItem::play() {
+    QProcess* process = new QProcess();
+
+    process->setProcessChannelMode(QProcess::MergedChannels);
+
+    QStringList args;
+
+    args << QStringLiteral("-c")  << QStringLiteral("echo '{ \"command\": [\"set_property\", \"pause\", false] }' | socat - /tmp/mpvsocket");
+
+    process->start(QStringLiteral("bash"), args);
+
+}
+
+void PlayerItem::pause() {
+
+    QProcess* process = new QProcess();
+
+    process->setProcessChannelMode(QProcess::MergedChannels);
+
+    QStringList args;
+
+    args << QStringLiteral("-c")  << QStringLiteral("echo '{ \"command\": [\"set_property\", \"pause\", true] }' | socat - /tmp/mpvsocket");
+
+    process->start(QStringLiteral("bash"), args);
+
+}
+
 void PlayerItem::next() {
     if (historyIdx == history.length() - 1) {
         playNext();
@@ -282,5 +381,7 @@ void PlayerItem::next() {
     Q_EMIT historyUpdate(history.count(), historyIdx);
     loadVideo(history[historyIdx], false);
 }
+
+
 
 PlayerItem::~PlayerItem() = default;
