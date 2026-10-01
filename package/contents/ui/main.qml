@@ -124,12 +124,12 @@ PlasmoidItem {
             background.visible: false
             onClicked: {
                 if (root.isPlaying) {
-                    player.pause();
                     root.isPlaying = false;
-                }
-                else
-                    player.play();
+                    player.pause();
+                } else {
                     root.isPlaying = true;
+                    player.play();
+                }
             }
 
             Kirigami.Icon {
