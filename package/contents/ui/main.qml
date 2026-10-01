@@ -56,22 +56,11 @@ PlasmoidItem {
             root.historyIdx = idx;
         }
         onSongStarted: (state) => {
-            mediaPlayer.stop();
-            mediaPlayer.source = "";
-            mediaPlayer.source = "/tmp/video.mp3";
-            mediaPlayer.play();
             root.songLoaded = true
+            root.isPlaying = true;
         }
         onTimeUpdate: (data) => {
             root.nowPlayingPos = Math.floor(parseInt(data));
-        }
-    }
-
-    MediaPlayer {
-        id: mediaPlayer
-        audioOutput: AudioOutput {}
-        onPositionChanged: (time) => {
-            root.nowPlayingPos = time / 1000;
         }
     }
 
@@ -134,15 +123,18 @@ PlasmoidItem {
             anchors.verticalCenter: parent.verticalCenter
             background.visible: false
             onClicked: {
-                if (mediaPlayer.playing)
-                    mediaPlayer.pause();
+                if (root.isPlaying) {
+                    player.pause();
+                    root.isPlaying = false;
+                }
                 else
-                    mediaPlayer.play();
+                    player.play();
+                    root.isPlaying = true;
             }
 
             Kirigami.Icon {
                 anchors.verticalCenter: parent.verticalCenter
-                source: mediaPlayer.playing ? "media-playback-pause" : "media-playback-start"
+                source: root.isPlaying ? "media-playback-pause" : "media-playback-start"
                 width: 25
                 height: 25
             }

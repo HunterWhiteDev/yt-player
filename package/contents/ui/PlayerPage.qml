@@ -166,8 +166,7 @@ ColumnLayout {
             to: root.nowPlayingDuration
             value: root.nowPlayingPos
             onMoved: () => {
-                //Media player accepts position in milliseconds
-                mediaPlayer.setPosition(slider.value * 1000);
+                player.setTime(slider.value);
             }
         }
 
@@ -222,15 +221,18 @@ ColumnLayout {
                 background.visible = hovered;
             }
             onClicked: {
-                if (mediaPlayer.playing)
-                    mediaPlayer.pause();
-                else
-                    mediaPlayer.play();
+                if (root.isPlaying) {
+                    root.isPlaying = false;
+                    player.pause();
+                } else {
+                    root.isPlaying = true;
+                    player.play();
+                }
             }
 
             Kirigami.Icon {
                 anchors.centerIn: parent
-                source: mediaPlayer.playing ? "media-playback-pause" : "media-playback-start"
+                source: root.isPlaying ? "media-playback-pause" : "media-playback-start"
                 width: 25
                 height: 25
             }

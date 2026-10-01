@@ -30,6 +30,7 @@ class LoadVideoThread : public QThread {
 
     QVariantMap m_videoData;
     QProcess *m_mpvProcess;
+    QProcess *m_ytdlpProcess;
 
 public:
     explicit LoadVideoThread(QVariantMap videoData, QObject *parent = nullptr)
@@ -43,6 +44,25 @@ Q_SIGNALS:
 private:
     void run() override;
 };
+
+
+class MpvWatchThread : public QThread {
+    Q_OBJECT
+
+
+public:
+    explicit MpvWatchThread(QObject *parent = nullptr)
+        : QThread(parent) {}
+
+    void quitProcess();
+
+Q_SIGNALS:
+    void timeUpdate(int time);
+
+private:
+    void run() override;
+};
+
 
 class PlayerItem : public QObject {
     Q_OBJECT
@@ -73,6 +93,14 @@ public:
     void previous();
     Q_INVOKABLE
     void next();
+    Q_INVOKABLE
+    void play();
+    Q_INVOKABLE
+    void pause();
+    Q_INVOKABLE
+    void setTime(int time);
+
+
 
 Q_SIGNALS:
     void searchUpdate(QVariantList searchResults);
