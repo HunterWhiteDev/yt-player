@@ -174,10 +174,6 @@ void PlayerItem::search(QString input) {
           &PlayerItem::searchUpdate);
 }
 
-void PlayerItem::hanldePositionChange(qint64 position) {
-  // qDebug() << position;
-}
-
 // If updateIndex is passed, we move the history index to the last  position.
 // Other wise we handle it in the next() or previous() functions
 
