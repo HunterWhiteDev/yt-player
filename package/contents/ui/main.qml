@@ -25,6 +25,7 @@ PlasmoidItem {
     property bool songLoaded: false
     property PlasmaComponents3.SwipeView swipeView
     property bool searchLoading: false;
+    property string loadingStatus: "0"; 
 
     onExpandedChanged: (state) => {
         if (state === false) {
@@ -46,15 +47,21 @@ PlasmoidItem {
             root.nowPlayingChannel = data.channel;
             root.nowPlayingThumbnail = "https://i.ytimg.com/vi/" + data.id + "/hqdefault.jpg";
             root.searchResultModel = [];
+        }
         onHistoryUpdate: (length, idx) => {
          root.historyLength = length;
             root.historyIdx = idx;
         }
         onSongStarted: (state) => {
+            console.log("SONG SHOULD START");
+
             root.songLoaded = true
             mediaPlayer.setSource("");
             mediaPlayer.setSource("/tmp/video.mp3");
             mediaPlayer.play();
+        }
+        onUpdateLoadingStatus: (status) => {
+            root.loadingStatus = status;
         }
      }
 
@@ -198,5 +205,4 @@ MediaPlayer {
         }
 
     }
-
 }

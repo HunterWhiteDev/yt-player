@@ -54,22 +54,31 @@ std::string exec(const char *cmd) {
 void LoadVideoThread::run() {
 
   // Removes song if one already exists
+  //
+  remove("/tmp/video");
   remove("/tmp/video.mp3");
+  remove("/tmp/video.webm");
 
   m_ytdlpProcess = new QProcess();
   m_ytdlpProcess->setProcessChannelMode(QProcess::MergedChannels);
 
   QStringList args;
   args << QStringLiteral("-c")
-       << QStringLiteral("yt-dlp -x %1 -t mp3 -o /tmp/video")
+       << QStringLiteral("yt-dlp -x %1 -t mp3 -o /tmp/video.mp3")
               .arg(m_videoData.value(QStringLiteral("url")).toString());
+
+  // Connect to update loading status
+  connect(m_ytdlpProcess, &QProcess::readyReadStandardOutput, [this]() {
+    QString output = QString::fromUtf8(m_ytdlpProcess->readAllStandardOutput());
+
+    // File has been downloaded and converted to mp3 file on disk
+    if (output.contains(QStringLiteral("\r[download]"))) {
+      Q_EMIT updateLoadingStatus(output.slice(11, 4));
+    }
+  });
 
   m_ytdlpProcess->start(QStringLiteral("bash"), args);
   m_ytdlpProcess->waitForFinished();
-
-  QUrl url = QUrl::fromLocalFile(QStringLiteral("/tmp/video.mp3"));
-
-  m_ytdlpProcess->terminate();
   finished(true);
 }
 
@@ -184,6 +193,9 @@ void PlayerItem::loadVideo(QVariantMap videoData, bool updateIndex) {
   m_loadVideoThread = new LoadVideoThread(videoData);
   connect(m_loadVideoThread, &LoadVideoThread::finished, this,
           &PlayerItem::songStarted);
+
+  connect(m_loadVideoThread, &LoadVideoThread::updateLoadingStatus, this,
+          &PlayerItem::updateLoadingStatus);
 
   m_loadVideoThread->start();
 }

@@ -42,6 +42,7 @@ public:
 
 Q_SIGNALS:
   void finished(bool state);
+  void updateLoadingStatus(QString status);
 
 private:
   void run() override;
@@ -95,6 +96,7 @@ Q_SIGNALS:
   void songStarted(bool mpvState);
   void timeUpdate(QJsonValue data);
   void quitMpvProcess();
+  void updateLoadingStatus(QString status);
 };
 
 void loadVideoWork(QVariantMap videoData);
