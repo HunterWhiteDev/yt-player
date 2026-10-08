@@ -110,7 +110,7 @@ ColumnLayout {
                         if (root.songLoaded)
                             return root.nowPlayingTitle;
                         else
-                            return "Loading...";
+                            return "Loading... " + root.loadingStatus + "%";
                     } else {
                         return "No Audio";
                     }
