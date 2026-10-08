@@ -29,6 +29,7 @@ find_package(Qt6 REQUIRED COMPONENTS
     Core
     Qml
     Widgets
+    Multimedia
 )
 
 find_package(KF6 ${KF6_MIN_VERSION} REQUIRED COMPONENTS
@@ -65,6 +66,7 @@ target_link_libraries(player
         Qt6::Widgets
         KF6::ConfigCore
         Plasma::Plasma
+        Qt6::Multimedia
 )
 
 qt_add_qml_module(player
