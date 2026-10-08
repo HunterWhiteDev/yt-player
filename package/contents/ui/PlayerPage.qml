@@ -159,26 +159,26 @@ ColumnLayout {
         Slider {
             id: slider
 
+            onMoved: {
+                mediaPlayer.position = (position * 100) * 1000;
+            }
             width: parent.width
             anchors.top: parent.bottom
             from: 0
             stepSize: 1
-            to: root.nowPlayingDuration
-            value: root.nowPlayingPos
-            onMoved: () => {
-                player.setTime(slider.value);
-            }
+            to: mediaPlayer.duration
+            value: mediaPlayer.position
         }
 
         Text {
-            text: new Date(root.nowPlayingPos * 1000).toISOString().slice(11, 19)
+            text: new Date(mediaPlayer.position).toISOString().slice(11, 19)
             anchors.top: slider.bottom
             anchors.left: parent.left
             color: "white"
         }
 
         Text {
-            text: new Date(root.nowPlayingDuration * 1000).toISOString().slice(11, 19)
+            text: new Date(mediaPlayer.duration).toISOString().slice(11, 19)
             anchors.top: slider.bottom
             anchors.right: parent.right
             color: "white"
@@ -187,10 +187,6 @@ ColumnLayout {
     }
 
     RowLayout {
-        // anchors.bottom: parent.bottom
-        // anchors.horizontalCenter: parent.horizontalCenter
-        // anchors.topMargin: 35
-
         id: playerControls
 
         Layout.alignment: Qt.AlignBottom | Qt.AlignHCenter
@@ -221,18 +217,15 @@ ColumnLayout {
                 background.visible = hovered;
             }
             onClicked: {
-                if (root.isPlaying) {
-                    root.isPlaying = false;
-                    player.pause();
-                } else {
-                    root.isPlaying = true;
-                    player.play();
-                }
+                if (mediaPlayer.playing)
+                    mediaPlayer.pause();
+                else
+                    mediaPlayer.play();
             }
 
             Kirigami.Icon {
                 anchors.centerIn: parent
-                source: root.isPlaying ? "media-playback-pause" : "media-playback-start"
+                source: mediaPlayer.playing ? "media-playback-pause" : "media-playback-start"
                 width: 25
                 height: 25
             }

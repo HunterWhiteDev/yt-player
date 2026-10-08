@@ -18,9 +18,6 @@ PlasmoidItem {
     property string nowPlayingTitle: ""
     property string nowPlayingChannel
     property string nowPlayingThumbnail: ""
-    property int nowPlayingPos: 0
-    property int nowPlayingDuration: 0
-    property bool isPlaying
     property var searchResultModel: []
     property bool hideListView
     property int historyIdx: -1
@@ -49,20 +46,29 @@ PlasmoidItem {
             root.nowPlayingChannel = data.channel;
             root.nowPlayingThumbnail = "https://i.ytimg.com/vi/" + data.id + "/hqdefault.jpg";
             root.searchResultModel = [];
-            root.nowPlayingDuration = parseInt(data.duration);
-        }
         onHistoryUpdate: (length, idx) => {
          root.historyLength = length;
             root.historyIdx = idx;
         }
         onSongStarted: (state) => {
             root.songLoaded = true
-            root.isPlaying = true;
+            mediaPlayer.setSource("");
+            mediaPlayer.setSource("/tmp/video.mp3");
+            mediaPlayer.play();
         }
-        onTimeUpdate: (data) => {
-            root.nowPlayingPos = Math.floor(parseInt(data));
-        }
+     }
+
+MediaDevices {
+    id: mediaDevices
+}
+
+MediaPlayer {
+    id: mediaPlayer
+    audioOutput: AudioOutput {
+        device: mediaDevices.defaultAudioOutput
     }
+        source: "/tmp/video.mp3"
+}
 
     fullRepresentation: Item {
         id: fullRepresentationItem
@@ -123,18 +129,16 @@ PlasmoidItem {
             anchors.verticalCenter: parent.verticalCenter
             background.visible: false
             onClicked: {
-                if (root.isPlaying) {
-                    root.isPlaying = false;
-                    player.pause();
+                if (mediaPlayer.playing) {
+                    mediaPlayer.pause();
                 } else {
-                    root.isPlaying = true;
-                    player.play();
+                    mediaPlayer.play();
                 }
             }
 
             Kirigami.Icon {
                 anchors.verticalCenter: parent.verticalCenter
-                source: root.isPlaying ? "media-playback-pause" : "media-playback-start"
+                source: mediaPlayer.playing ? "media-playback-pause" : "media-playback-start"
                 width: 25
                 height: 25
             }
