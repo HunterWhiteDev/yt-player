@@ -160,7 +160,7 @@ ColumnLayout {
             id: slider
 
             onMoved: {
-                mediaPlayer.position = (position * 100) * 1000;
+                mediaPlayer.position = value;
             }
             width: parent.width
             anchors.top: parent.bottom
