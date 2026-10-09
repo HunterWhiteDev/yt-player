@@ -1,4 +1,3 @@
-pragma ComponentBehavior: Bound
 import QtMultimedia
 import QtQml
 import QtQuick
