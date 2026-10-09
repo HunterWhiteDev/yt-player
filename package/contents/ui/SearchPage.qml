@@ -21,7 +21,7 @@ ColumnLayout {
             Layout.alignment: Qt.AlignLeft
             // implicitWidth: playerBackIcon.width + playerBackText.width
             onClicked: {
-                swipeView.setCurrentIndex(0);
+                swipeView.setCurrentIndex(1);
             }
             Layout.fillWidth: true
 

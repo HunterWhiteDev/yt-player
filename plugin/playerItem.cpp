@@ -71,6 +71,7 @@ void LoadVideoThread::run() {
   connect(m_ytdlpProcess, &QProcess::readyReadStandardOutput, [this]() {
     QString output = QString::fromUtf8(m_ytdlpProcess->readAllStandardOutput());
 
+    // qDebug() << output;
     // File has been downloaded and converted to mp3 file on disk
     if (output.contains(QStringLiteral("\r[download]"))) {
       Q_EMIT updateLoadingStatus(output.slice(11, 4));
@@ -79,6 +80,7 @@ void LoadVideoThread::run() {
 
   m_ytdlpProcess->start(QStringLiteral("bash"), args);
   m_ytdlpProcess->waitForFinished();
+
   finished(true);
 }
 
@@ -158,7 +160,7 @@ void SearchThread::run() {
   finished(searchResults);
 };
 
-PlayerItem::PlayerItem(QObject *parent) : QObject(parent), historyIdx(-1) {
+PlayerItem::PlayerItem(QObject *parent) : QObject(parent), historyIdx(0) {
 
   // Create cache dir if it does not exist
   char *p_username = getlogin();
@@ -170,8 +172,6 @@ PlayerItem::PlayerItem(QObject *parent) : QObject(parent), historyIdx(-1) {
   if (!dirExists) {
     QDir(filePath).mkdir(QStringLiteral("."));
   }
-
-  QVector<QString> history;
 }
 
 void PlayerItem::search(QString input) {
@@ -186,7 +186,7 @@ void PlayerItem::search(QString input) {
 // If updateIndex is passed, we move the history index to the last  position.
 // Other wise we handle it in the next() or previous() functions
 
-void PlayerItem::loadVideo(QVariantMap videoData, bool updateIndex) {
+void PlayerItem::loadVideo(QVariantMap videoData, bool addToHistory) {
 
   Q_EMIT nowPlayingUpdate(videoData);
 
@@ -198,6 +198,13 @@ void PlayerItem::loadVideo(QVariantMap videoData, bool updateIndex) {
           &PlayerItem::updateLoadingStatus);
 
   m_loadVideoThread->start();
+
+  if (addToHistory) {
+    history.push_back(videoData);
+    historyIdx = history.size() - 1;
+    historyUpdate(history, historyIdx);
+  }
+  nowPlaying = videoData;
 }
 
 void PlayerItem::handleSongStart() { songStarted(true); }
@@ -208,87 +215,91 @@ void PlayerItem::previous() {
 
   historyIdx--;
 
-  Q_EMIT historyUpdate(history.count(), historyIdx);
+  Q_EMIT historyUpdate(history, historyIdx);
   loadVideo(history[historyIdx], false);
 }
 
 void PlayerItem::playNext() {
-  // if (nowPlayingId.length() == 0) {
-  //   qDebug() << "No id for now playing";
-  //   return;
-  // }
 
-  int searchCount = history.count() * 2;
+  int searchCount = history.count() + 1;
   QStringList args;
   args << QStringLiteral("ytsearch%1:%2")
               .arg(searchCount)
               .arg(nowPlaying.value(QStringLiteral("title")).toString())
        << QStringLiteral("--flat-playlist") << QStringLiteral("--print")
-       << QStringLiteral("%(id)s");
+       << QStringLiteral(
+              "%(title)s*%(duration)s*%(ie_key)s*%(id)s*%(url)s*%(channel)s");
 
-  QProcess process;
-  process.startDetached(QStringLiteral("yt-dlp"), args);
+  qDebug() << args;
 
-  QString cmdString =
-      QStringLiteral(
-          "yt-dlp ytsearch%1:'%2' --flat-playlist --print "
-          "'%(title)s||%(duration)s||%(ie_key)s||%(id)s||%(url)s||%(channel)s'")
-          .arg(searchCount)
-          .arg(nowPlaying.value(QStringLiteral("title")).toString());
-  std::string output = playerItem::exec(&cmdString.toStdString()[0]);
-  QString outputQString = QString::fromStdString(output);
+  QProcess *process = new QProcess;
 
-  // Get the output, iterate over every id that the output has and the history.
-  // If any string in the history is equal to that output, just skip for the
-  // rests of each loop
-  QStringList stringList = outputQString.split(QChar::fromLatin1('\n'));
-  for (QString lineString : stringList) {
+  process->setProcessChannelMode(QProcess::MergedChannels);
+  connect(process, &QProcess::readyReadStandardOutput, [process, this]() {
+    QString output = QString::fromUtf8(process->readAllStandardOutput());
+    QStringList lineStringList =
+        output.slice(0, output.size() - 1).split(QStringLiteral("*"));
 
-    QStringList lineStringList = lineString.split(QStringLiteral("||"));
+    // if (id != nowPlaying.value(QStringLiteral("id")).toString()) {
 
-    QString title = lineStringList[0];
-    QString duration = lineStringList[1];
-    QString type = lineStringList[2];
     QString id = lineStringList[3];
-    QString url = lineStringList[4];
-    QString channel = lineStringList[5];
 
-    QVariantMap map;
-    map.insert(QStringLiteral("title"), title);
-    map.insert(QStringLiteral("id"), id);
-    map.insert(QStringLiteral("duration"), duration);
-    map.insert(QStringLiteral("type"), type);
-    map.insert(QStringLiteral("url"), url);
-    map.insert(QStringLiteral("channel"), channel);
-
-    bool skip = false;
-    for (QVariantMap video : history) {
-
-      QString historyId = video.value(QStringLiteral("id")).toString();
-      if (id.compare(historyId) == 0) {
-        skip = true;
+    // Look for entry again in the history
+    bool found = false;
+    for (QVariantMap &historyElement : history) {
+      if (historyElement.value(QStringLiteral("id")) == id) {
+        found = true;
+        break;
       }
-      if (skip)
-        continue;
     }
-    if (skip)
-      continue;
 
-    loadVideo(map, true);
-    return;
-  }
+    // If the current search entry was not found in the history, it's a new
+    // video. Play it
+    if (!found) {
+      QString title = lineStringList[0];
+      QString duration = lineStringList[1];
+      QString type = lineStringList[2];
+      QString url = lineStringList[4];
+      QString channel = lineStringList[5];
+
+      QVariantMap newData;
+      newData.insert(QStringLiteral("title"), title);
+      newData.insert(QStringLiteral("duration"), duration);
+      newData.insert(QStringLiteral("type"), type);
+      newData.insert(QStringLiteral("url"), url);
+      newData.insert(QStringLiteral("channel"), channel);
+      newData.insert(QStringLiteral("id"), id);
+
+      qDebug() << newData;
+      loadVideo(newData, true);
+
+      process->close();
+      process->terminate();
+    }
+  });
+
+  process->start(QStringLiteral("yt-dlp"), args);
+  process->waitForFinished();
 }
 
 void PlayerItem::next() {
+  qDebug() << historyIdx;
+  qDebug() << history.length() - 1;
   if (historyIdx == history.length() - 1) {
+    qDebug() << "Running Play Next";
     playNext();
-    return;
+  } else {
+    historyIdx++;
+
+    Q_EMIT historyUpdate(history, historyIdx);
+    loadVideo(history[historyIdx], false);
   }
+}
 
-  historyIdx++;
-
-  Q_EMIT historyUpdate(history.count(), historyIdx);
-  loadVideo(history[historyIdx], false);
+void PlayerItem::setHistoryIdx(int idx) {
+  qDebug() << "Setting Index to : " << idx;
+  historyIdx = idx;
+  historyUpdate(history, idx);
 }
 
 PlayerItem::~PlayerItem() = default;
