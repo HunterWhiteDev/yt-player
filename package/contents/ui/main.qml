@@ -1,4 +1,3 @@
-pragma ComponentBehavior: Bound
 import QtMultimedia
 import QtQml
 import QtQuick
@@ -19,13 +18,13 @@ PlasmoidItem {
     property string nowPlayingChannel
     property string nowPlayingThumbnail: ""
     property var searchResultModel: []
+    property var history: []
     property bool hideListView
     property int historyIdx: -1
-    property int historyLength: -1
     property bool songLoaded: false
     property PlasmaComponents3.SwipeView swipeView
-    property bool searchLoading: false;
-    property string loadingStatus: "0"; 
+    property bool searchLoading: false
+    property string loadingStatus: "0"
 
     onExpandedChanged: (state) => {
         if (state === false) {
@@ -45,17 +44,16 @@ PlasmoidItem {
         onNowPlayingUpdate: (data) => {
             root.nowPlayingTitle = data.title;
             root.nowPlayingChannel = data.channel;
+            root.nowPlayingId = data.id;
             root.nowPlayingThumbnail = "https://i.ytimg.com/vi/" + data.id + "/hqdefault.jpg";
             root.searchResultModel = [];
         }
-        onHistoryUpdate: (length, idx) => {
-         root.historyLength = length;
+        onHistoryUpdate: (history, idx) => {
+            root.history = history;
             root.historyIdx = idx;
         }
         onSongStarted: (state) => {
-            console.log("SONG SHOULD START");
-
-            root.songLoaded = true
+            root.songLoaded = true;
             mediaPlayer.setSource("");
             mediaPlayer.setSource("/tmp/video.mp3");
             mediaPlayer.play();
@@ -63,19 +61,28 @@ PlasmoidItem {
         onUpdateLoadingStatus: (status) => {
             root.loadingStatus = status;
         }
-     }
-
-MediaDevices {
-    id: mediaDevices
-}
-
-MediaPlayer {
-    id: mediaPlayer
-    audioOutput: AudioOutput {
-        device: mediaDevices.defaultAudioOutput
     }
+
+    MediaDevices {
+        id: mediaDevices
+    }
+
+    MediaPlayer {
+        id: mediaPlayer
+
         source: "/tmp/video.mp3"
-}
+        onPositionChanged: {
+            if (position === duration && position !== 0) {
+                root.songLoaded = false;
+                player.next();
+            }
+        }
+
+        audioOutput: AudioOutput {
+            device: mediaDevices.defaultAudioOutput
+        }
+
+    }
 
     fullRepresentation: Item {
         id: fullRepresentationItem
@@ -85,39 +92,44 @@ MediaPlayer {
         Layout.maximumWidth: 325
         Layout.minimumWidth: 325
 
-
         PlasmaComponents3.SwipeView {
             id: swipeView
 
             Layout.fillWidth: true
             onCurrentIndexChanged: {
-                if (swipeView.currentIndex === 0) {
+                if (swipeView.currentIndex === 1) {
                     fullRepresentationItem.Layout.minimumHeight = 200;
                     fullRepresentationItem.Layout.maximumHeight = 200;
-                } else if (swipeView.currentIndex === 1) {
+                } else {
                     fullRepresentationItem.Layout.minimumHeight = 650;
                     fullRepresentationItem.Layout.maximumHeight = 650;
                 }
             }
             //A Queue view will have to be created here eventually
             spacing: 1
-            currentIndex: 0
+            currentIndex: 1
             anchors.fill: parent
 
             Connections {
                 function onNowPlayingUpdate() {
-                    swipeView.setCurrentIndex(0);
+                    swipeView.setCurrentIndex(1);
                 }
 
                 target: player
             }
 
+            //History View
+            HistoryPage {
+            }
+
             //Playing View
-            PlayerPage {}
-            
+            PlayerPage {
+            }
+
             //Search Page
-            SearchPage {}
-            
+            SearchPage {
+            }
+
         }
 
     }
@@ -136,11 +148,10 @@ MediaPlayer {
             anchors.verticalCenter: parent.verticalCenter
             background.visible: false
             onClicked: {
-                if (mediaPlayer.playing) {
+                if (mediaPlayer.playing)
                     mediaPlayer.pause();
-                } else {
+                else
                     mediaPlayer.play();
-                }
             }
 
             Kirigami.Icon {
@@ -163,7 +174,6 @@ MediaPlayer {
             Layout.alignment: Qt.AlignCenter
             Layout.fillHeight: true
 
-
             Label {
                 id: compactTextLabel
 
@@ -172,17 +182,18 @@ MediaPlayer {
                 text: root.nowPlayingTitle ? root.nowPlayingTitle : "No Audio"
 
                 MouseArea {
-                anchors.fill: parent
-                onClicked: root.expanded = !root.expanded
-                hoverEnabled: true
-                onEntered: {
-                 compactAnimation.start();
+                    anchors.fill: parent
+                    onClicked: root.expanded = !root.expanded
+                    hoverEnabled: true
+                    onEntered: {
+                        compactAnimation.start();
+                    }
+                    onExited: {
+                        compactAnimation.restart();
+                        compactAnimation.stop();
+                    }
                 }
-                onExited: {
-                  compactAnimation.restart();
-                  compactAnimation.stop();
-                }
-              }
+
             }
 
             SequentialAnimation on contentX {
@@ -205,4 +216,5 @@ MediaPlayer {
         }
 
     }
+
 }

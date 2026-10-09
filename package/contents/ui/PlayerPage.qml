@@ -13,13 +13,41 @@ ColumnLayout {
     RowLayout {
         id: playerActions
 
-        // width: parent.width
-        Layout.alignment: Qt.AlignTop | Qt.AlignRight
+        Layout.alignment: Qt.AlignTop
+        Layout.preferredWidth: parent.width
+        Layout.fillWidth: true
+
+        PlasmaComponents3.Button {
+            Layout.alignment: Qt.AlignLeft
+            onClicked: {
+                swipeView.setCurrentIndex(0);
+            }
+
+            contentItem: RowLayout {
+                Kirigami.Icon {
+                    id: historyIcon
+
+                    color: "white"
+                    source: "application-menu"
+                    Layout.preferredWidth: 20
+                    Layout.preferredHeight: 20
+                }
+
+                Text {
+                    id: historyText
+
+                    text: "History"
+                    color: "white"
+                }
+
+            }
+
+        }
 
         PlasmaComponents3.Button {
             Layout.alignment: Qt.AlignRight
             onClicked: {
-                swipeView.setCurrentIndex(1);
+                swipeView.setCurrentIndex(2);
             }
 
             contentItem: RowLayout {
@@ -160,7 +188,7 @@ ColumnLayout {
             id: slider
 
             onMoved: {
-                mediaPlayer.position = (position * 100) * 1000;
+                mediaPlayer.position = value;
             }
             width: parent.width
             anchors.top: parent.bottom
@@ -198,7 +226,10 @@ ColumnLayout {
             onHoveredChanged: {
                 background.visible = hovered;
             }
-            onClicked: player.previous()
+            onClicked: {
+                root.songLoaded = false;
+                player.previous();
+            }
 
             Kirigami.Icon {
                 source: "arrow-left-double"
